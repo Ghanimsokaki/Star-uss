@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildShip, disposeObject3D } from '../art/ships3d.js';
+import { buildShip, disposeObject3D, makeShipMaterials, saucerGeometry, roundedBox, bodyLathe } from '../art/ships3d.js';
 import { buildEnemy, shieldBubble } from '../art/enemies3d.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
@@ -40,6 +40,9 @@ export class SystemScene {
     this.abilityCd = 0;
     this.abilityTimer = 0;
     this.bluffTimer = 0;
+    this.hullPlateTimer = 0;
+    this.saucerTimer = 0;
+    this.speedBoostTimer = 0;
     this.scanCd = 0;
     this.target = null;
     this.reticlePos = { x: 0, y: 0 };
@@ -102,6 +105,7 @@ export class SystemScene {
   }
 
   exit() {
+    this._dropSaucerSection?.();
     this._bindings.forEach((off) => off());
     this._bindings = [];
     this._teardown();
@@ -141,7 +145,7 @@ export class SystemScene {
     this.target = null;
     this.dead = false;
     this.hull = 1; this.shield = 1; this.boost = 1;
-    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0;
+    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0; this.hullPlateTimer = 0; this.saucerTimer = 0; this.speedBoostTimer = 0;
     this.projectiles = [];
     this.effects = [];
     this._labelsEl = null;
@@ -491,7 +495,8 @@ export class SystemScene {
     if (boosting) this.boost = Math.max(0, this.boost - dt * 0.34);
     else this.boost = Math.min(1, this.boost + dt * 0.16);
     const baseSpeed = stats.speed;
-    this.speed = damp(this.speed, baseSpeed * this.throttle * (boosting ? 2.0 : 1), 2.2, dt);
+    const sprint = this.speedBoostTimer > 0 ? 1.45 : 1;
+    this.speed = damp(this.speed, baseSpeed * this.throttle * sprint * (boosting ? 2.0 : 1), 2.2, dt);
 
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
     this.player.position.addScaledVector(forward, this.speed * dt);
@@ -572,6 +577,9 @@ export class SystemScene {
     this.abilityCd = Math.max(0, this.abilityCd - dt);
     this.abilityTimer = Math.max(0, this.abilityTimer - dt);
     this.bluffTimer = Math.max(0, this.bluffTimer - dt);
+    this.hullPlateTimer = Math.max(0, this.hullPlateTimer - dt);
+    this.saucerTimer = Math.max(0, this.saucerTimer - dt);
+    this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
     this.scanCd = Math.max(0, this.scanCd - dt);
 
     const autoFire = this.game.state.settings.autoFire;
@@ -648,6 +656,11 @@ export class SystemScene {
       this._impact(end, this.game.shipRecord.nacelle || '#59e0ff');
       this.shake = Math.max(this.shake, 0.18);
     }
+    // separated saucer section adds its own beam
+    if (this.saucerSection && target) {
+      this._spawnBeam(this.saucerSection.position.clone(), target.group.position.clone(), '#9fe6ff', 0.55);
+      this._damageEnemy(target, stats.phaser * 0.35);
+    }
     // prometheus multi-vector clone beams
     if (this.clones.length && target) {
       this.clones.forEach((c) => {
@@ -708,6 +721,39 @@ export class SystemScene {
       this.addLog('Corbomite Maneuver — the hostiles are holding fire', 'good');
       toast('Corbomite Maneuver', 'good', 2200);
       audio.confirm();
+    } else if (ability.id === 'polarizedHull') {
+      this.hullPlateTimer = 8;
+      this._abilityRing('#ffd08a', 20);
+      this.addLog('Polarised hull plating energised — damage reduced 60% for 8s', 'good');
+      audio.upgrade();
+    } else if (ability.id === 'transwarp') {
+      const fwd = V(0, 0, 1).applyQuaternion(this.player.quaternion);
+      this.player.position.addScaledVector(fwd, 520);
+      this.speedBoostTimer = 6;
+      this._warpFlash(this.player.position);
+      this.addLog('Transwarp sprint — 520 units ahead, 45% speed for 6s', 'good');
+      audio.warp();
+    } else if (ability.id === 'saucerSep') {
+      this.saucerTimer = 8;
+      this._spawnSaucerSection();
+      this._abilityRing('#9fe6ff', 26);
+      this.addLog('Saucer separation — both sections are engaging', 'good');
+      audio.upgrade();
+    } else if (ability.id === 'fleetBarrage') {
+      const alive = this._aliveEnemies();
+      for (let i = 0; i < 10; i++) {
+        const muzzle = this._muzzleWorld('torp');
+        const t = alive[i % Math.max(1, alive.length)];
+        const dir = t
+          ? t.group.position.clone().sub(muzzle).normalize()
+          : V(0, 0, 1).applyQuaternion(this.player.quaternion);
+        this._spawnTorpedo(muzzle, dir, this.stats.torp * 0.8, t || null, 'player');
+      }
+      this.hull = Math.min(this.maxHull, this.hull + this.maxHull * 0.22);
+      this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.3);
+      this._abilityRing('#c9a6ff', 30);
+      this.addLog('Fleet barrage away — hull and shields regenerating', 'good');
+      audio.torpedo(0.5);
     } else if (ability.id === 'mva') {
       this.abilityTimer = 8;
       this._spawnClones();
@@ -773,6 +819,87 @@ export class SystemScene {
     sprite.scale.setScalar(1.6);
     this.fxRoot.add(sprite);
     this.effects.push({ obj: sprite, life: 0.32, maxLife: 0.32, kind: 'impact', grow: 14 });
+  }
+
+  _abilityRing(color = '#8fd6ff', size = 24) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(2.2, 3.0, 64),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color), transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
+      })
+    );
+    ring.position.copy(this.player.position);
+    ring.quaternion.copy(this.camera.quaternion);
+    this.fxRoot.add(ring);
+    this.effects.push({ obj: ring, life: 0.8, maxLife: 0.8, kind: 'impact', grow: size });
+  }
+
+  /** Galaxy-class saucer separation: a real second model that flies alongside. */
+  _spawnSaucerSection() {
+    this._dropSaucerSection();
+    const g = this.game;
+    const mats = makeShipMaterials(g.shipClass, g.shipRecord, this.quality);
+    const group = new THREE.Group();
+
+    // the saucer itself
+    const saucer = new THREE.Mesh(saucerGeometry(1.9, 0.2, { segments: 72, scaleZ: 1.2 }), mats.hull);
+    saucer.position.y = 0.2;
+    group.add(saucer);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.05, 6, 72), mats.trim);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.2;
+    group.add(rim);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mats.trim);
+    dome.position.y = 0.34;
+    group.add(dome);
+    // impulse engine glow on the saucer's aft edge
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.2), mats.glow);
+    glow.position.set(0, 0.22, -1.9);
+    glow.rotation.y = Math.PI;
+    group.add(glow);
+
+    // stardrive section behind and below
+    const drive = new THREE.Group();
+    const body = new THREE.Mesh(bodyLathe(3.4, 0.5, { segments: 32, front: 0.42, back: 0.6 }), mats.hull);
+    body.scale.y = 0.9;
+    drive.add(body);
+    for (const sgn of [-1, 1]) {
+      const nac = new THREE.Mesh(bodyLathe(2.6, 0.19, { segments: 20, front: 0.66, back: 0.58 }), mats.hull);
+      nac.position.set(sgn * 1.1, 0.55, -0.3);
+      drive.add(nac);
+      const grille = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.5), mats.glow);
+      grille.position.set(sgn * 1.1, 0.55, -0.3);
+      drive.add(grille);
+    }
+    const pod = new THREE.Mesh(roundedBox(0.4, 0.24, 1.0, 0.06), mats.trim);
+    pod.position.set(0, 0.55, 0.4);
+    drive.add(pod);
+    drive.position.set(0, -1.5, -4.5);
+    group.add(drive);
+
+    this.shipRoot.add(group);
+    this.saucerSection = group;
+  }
+
+  _dropSaucerSection() {
+    if (!this.saucerSection) return;
+    this.shipRoot.remove(this.saucerSection);
+    disposeObject3D(this.saucerSection);
+    this.saucerSection = null;
+  }
+
+  _updateSaucerSection(dt) {
+    if (!this.saucerSection) return;
+    if (this.saucerTimer <= 0 || this.dead) { this._dropSaucerSection(); return; }
+    const fwd = V(0, 0, 1).applyQuaternion(this.player.quaternion);
+    const right = V(1, 0, 0).applyQuaternion(this.player.quaternion);
+    const goal = this.player.position.clone()
+      .addScaledVector(right, 13)
+      .addScaledVector(fwd, 4)
+      .add(V(0, 2, 0));
+    this.saucerSection.position.lerp(goal, 1 - Math.exp(-6 * dt));
+    this.saucerSection.quaternion.slerp(this.player.quaternion, 1 - Math.exp(-6 * dt));
   }
 
   _corbomiteBurst() {
@@ -932,6 +1059,11 @@ export class SystemScene {
     if (this.dead) return;
     this.lastDamage = 0;
     let dmg = amount;
+    // polarised hull plating (NX) and a separated saucer (Galaxy) both soak damage
+    if (!ignoreShield) {
+      if (this.hullPlateTimer > 0) dmg *= 0.4;
+      if (this.saucerTimer > 0) dmg *= 0.5;
+    }
     if (!ignoreShield && this.shield > 0) {
       this.shield -= dmg;
       audio.shieldHit();
@@ -966,6 +1098,7 @@ export class SystemScene {
   _destroyPlayer() {
     if (this.dead) return;
     this.dead = true;
+    this._dropSaucerSection();
     this._explosion(this.player.position.clone(), 3.6, '#9fd8ff');
     this.player.visible = false;
     audio.stopEngine();
@@ -1405,6 +1538,7 @@ export class SystemScene {
       this._updateEnemies(capped);
       this._updateProjectiles(capped);
       this._updateClones(capped);
+      this._updateSaucerSection(capped);
       this.lastDamage += capped;
       if (this.lastDamage > 3.5 && this.shield < this.maxShield) {
         this.shield = Math.min(this.maxShield, this.shield + this.stats.regen * capped);

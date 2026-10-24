@@ -41,15 +41,6 @@ export const MISSIONS = [
     check: (s) => s.stats.systems >= 2,
   },
   {
-    id: 'm-enterprise',
-    title: 'The Legend Herself',
-    desc: 'Commission the Constitution-class U.S.S. Enterprise, NCC-1701.',
-    hint: 'Shipyard → Fleet → Constitution-class',
-    reward: { credits: 7500, research: 120, dilithium: 40 },
-    // lenient on old saves: any hull of the Enterprise's tier or above counts
-    check: (s) => s.ownedShips.some((id) => ['constitution', 'akira', 'defiant', 'sovereign', 'prometheus'].includes(id)),
-  },
-  {
     id: 'm-intrepid',
     title: 'A Longer Reach',
     desc: 'Commission the Intrepid-class U.S.S. Voyager.',
@@ -74,6 +65,15 @@ export const MISSIONS = [
     check: (s) => s.civ.districts.length >= 6,
   },
   {
+    id: 'm-enterprise',
+    title: 'The Legend Herself',
+    desc: 'Commission the Constitution-class U.S.S. Enterprise, NCC-1701.',
+    hint: 'Shipyard → Fleet → Constitution-class',
+    reward: { credits: 7500, research: 120, dilithium: 40 },
+    // lenient on old saves: any hull of the Enterprise's tier or above counts
+    check: (s) => s.ownedShips.some((id) => ['constitution', 'akira', 'defiant', 'sovereign', 'prometheus'].includes(id)),
+  },
+  {
     id: 'm-blackhole',
     title: 'The Black Cluster',
     desc: 'Travel to the Black Cluster and face what waits there.',
@@ -88,6 +88,22 @@ export const MISSIONS = [
     hint: 'Research Singularity Physics, then travel to Vela',
     reward: { credits: 60000, research: 1500 },
     check: (s) => s.flags.bossDefeated,
+  },
+  {
+    id: 'm-enterprise-d',
+    title: 'All Good Things',
+    desc: 'Commission a Galaxy-class starship \u2014 the Enterprise-D\u2019s hull.',
+    hint: 'Shipyard \u2192 Fleet \u2192 Galaxy-class',
+    reward: { credits: 26000, research: 400, dilithium: 80 },
+    check: (s) => s.ownedShips.some((id) => ['galaxy', 'prometheus', 'odyssey'].includes(id)),
+  },
+  {
+    id: 'm-flagship',
+    title: 'A Name Worth Carrying',
+    desc: 'Take command of the Odyssey-class U.S.S. Enterprise-F.',
+    hint: 'Research seven technologies, reach rank 12, then buy the Odyssey-class',
+    reward: { credits: 80000, research: 2000, dilithium: 200 },
+    check: (s) => s.ownedShips.includes('odyssey'),
   },
 ];
 

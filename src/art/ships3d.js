@@ -677,14 +677,175 @@ function buildPrometheus(b) {
   return b.finish({ length: 8.6, radius: 3.2, quadNacelle: true });
 }
 
+function buildNX(b) {
+  const m = b.mats;
+  // flattened oval command hull, very wide relative to length
+  b.saucer({ r: 1.32, t: 0.2, y: 0.5, z: 1.02, scaleZ: 1.28, segments: 72 });
+  // compact engineering hull tucked under the saucer
+  const hull = b.hullBody({ len: 2.6, r: 0.44, y: 0.16, z: -0.72, front: 0.42, back: 0.66, scaleY: 0.86 });
+  // squat dorsal spine joining the two
+  b.mesh(roundedBox(0.52, 0.34, 1.1, 0.08), m.hull, [0, 0.34, 0.2]);
+  // twin arm pylons sweeping out to mid-mounted nacelles
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.18, -0.14], [1.28, 0.2], [1.28, 0.42], [0.16, 0.16]], 0.1, m.hull, [sgn * 0.9, 0.36, -0.5], [0, 0, 0]);
+  }
+  // nacelles sit low and wide, with big bussard caps
+  b.nacelle({ x: -1.55, y: 0.5, z: -0.55, len: 2.55, r: 0.19, tilt: -0.01 });
+  b.nacelle({ x: 1.55, y: 0.5, z: -0.55, len: 2.55, r: 0.19, tilt: 0.01 });
+  // deflector at the tip of the engineering hull
+  b.deflector({ r: 0.26, y: 0.16, z: 0.62 });
+  // impulse engines
+  b.impulse(0.42, -1.15, 2, 0.42);
+  // phase cannons (pre-Federation, front-facing)
+  b.phaserBank(0, 0.4, 2.2, [Math.PI / 2, 0, 0], 0.8);
+  b.phaserBank(0.85, 0.6, 1.2, [0, 0.55, 0], 0.55);
+  b.phaserBank(-0.85, 0.6, 1.2, [0, -0.55, 0], 0.55);
+  // torpedo bay under the saucer
+  b.torpTube(-0.24, 0.32, 1.75);
+  b.torpTube(0.24, 0.32, 1.75);
+  b.decalOnSaucer(1.12, 0.2, 0.5, 1.0);
+  b.sideDecal(-0.44, 0.2, -0.8, 0.5, -Math.PI / 2);
+  b.sideDecal(0.44, 0.2, -0.8, 0.5, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.22, -1.1);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 18 : 8, [0.8, 0.34, 1.5]);
+  return b.finish({ length: 6.2, radius: 2.2 });
+}
+
+function buildExcelsior(b) {
+  const m = b.mats;
+  // low, wide saucer
+  b.saucer({ r: 1.66, t: 0.18, y: 0.8, z: 1.5, scaleZ: 1.32, segments: 84 });
+  // long cylindrical secondary hull
+  const hull = b.hullBody({ len: 4.1, r: 0.52, y: 0.28, z: -1.35, front: 0.5, back: 0.62, scaleY: 0.9 });
+  // neck
+  b.pylon([[0.32, 0], [0.32, 0.6], [-0.3, 0.6], [-0.3, 0]], 0.3, m.hull, [0, 0.36, 0.9], [0, 0, 0]);
+  // aft shuttlebay housing
+  b.mesh(roundedBox(0.72, 0.4, 1.3, 0.08), m.trim, [0, 0.42, -3.2]);
+  b.mesh(roundedBox(0.5, 0.18, 0.14, 0.04), m.dark, [0, 0.5, -3.85]);
+  // long, sleek pylons swept aft
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.3, 0.05], [1.5, 0.52], [1.52, 0.78], [0.28, 0.26]], 0.12, m.hull, [sgn * 1.15, 0.4, -2.1], [0, 0, 0]);
+  }
+  // long cylindrical nacelles with squared intake rings
+  b.nacelle({ x: -1.86, y: 1.16, z: -2.6, len: 3.9, r: 0.225, tilt: -0.015 });
+  b.nacelle({ x: 1.86, y: 1.16, z: -2.6, len: 3.9, r: 0.225, tilt: 0.015 });
+  // big deflector housing at the nose
+  b.deflector({ r: 0.4, y: 0.28, z: 0.8 });
+  b.impulse(0.82, -0.15, 2, 0.5);
+  b.phaserBank(0, 0.36, 3.0, [Math.PI / 2, 0, 0], 1.0);
+  b.phaserBank(0, 0.52, -3.1, [0, 0, 0], 0.7);
+  b.phaserBank(1.15, 0.86, 1.5, [0, 0.6, 0], 0.6);
+  b.phaserBank(-1.15, 0.86, 1.5, [0, -0.6, 0], 0.6);
+  b.torpTube(-0.26, 0.5, 2.35);
+  b.torpTube(0.26, 0.5, 2.35);
+  b.torpTube(-0.26, 0.5, -3.5);
+  b.torpTube(0.26, 0.5, -3.5);
+  b.decalOnSaucer(1.44, 0.18, 0.9, 1.4);
+  b.sideDecal(-0.54, 0.3, -1.5, 0.66, -Math.PI / 2);
+  b.sideDecal(0.54, 0.3, -1.5, 0.66, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.32, -1.7);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 24 : 10, [0.9, 0.4, 2.4]);
+  return b.finish({ length: 8.4, radius: 2.8 });
+}
+
+function buildGalaxy(b) {
+  const m = b.mats;
+  // enormous, wide command saucer
+  b.saucer({ r: 2.15, t: 0.22, y: 0.96, z: 1.5, scaleZ: 1.18, segments: 96 });
+  // thicker neck
+  b.pylon([[0.42, 0], [0.42, 0.82], [-0.38, 0.82], [-0.38, 0]], 0.42, m.hull, [0, 0.34, 0.92], [0, 0, 0]);
+  // deep engineering hull block
+  const hull = b.hullBody({ len: 4.6, r: 0.78, y: 0.26, z: -1.5, front: 0.44, back: 0.58, scaleY: 0.92 });
+  // dorsal spine and captain's yacht
+  b.mesh(roundedBox(1.1, 0.36, 2.6, 0.12), m.hull, [0, 0.8, -1.35]);
+  b.mesh(roundedBox(0.44, 0.12, 0.9, 0.05), m.trim, [0, 0.42, 0.15]);
+  // aft shuttlebay
+  b.mesh(roundedBox(0.9, 0.44, 0.5, 0.08), m.trim, [0, 0.5, -3.75]);
+  // wide swept pylons
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.22, 0.15], [1.45, 0.62], [1.5, 0.96], [0.36, 0.42]], 0.18, m.hull, [sgn * 1.25, 0.62, -2.1], [0, 0, 0]);
+  }
+  // two big nacelles, angled up
+  b.nacelle({ x: -1.95, y: 1.34, z: -2.55, len: 3.7, r: 0.27, tilt: -0.09 });
+  b.nacelle({ x: 1.95, y: 1.34, z: -2.55, len: 3.7, r: 0.27, tilt: 0.09 });
+  // main deflector
+  b.deflector({ r: 0.54, y: 0.26, z: 1.05 });
+  b.impulse(1.05, -0.35, 4, 0.7);
+  // phaser arrays (Galaxy had long strips)
+  b.phaserBank(0, 0.42, 3.2, [Math.PI / 2, 0, 0], 1.5);
+  b.phaserBank(0, 1.02, 2.2, [0, 0, 0], 1.4);
+  b.phaserBank(1.6, 1.0, 0.7, [0, 0.7, 0], 0.8);
+  b.phaserBank(-1.6, 1.0, 0.7, [0, -0.7, 0], 0.8);
+  b.phaserBank(0, 0.86, -2.6, [0, 0, 0], 0.8);
+  b.torpTube(-0.3, 0.72, 2.55);
+  b.torpTube(0.3, 0.72, 2.55);
+  b.torpTube(-0.3, 0.72, -3.6);
+  b.torpTube(0.3, 0.72, -3.6);
+  b.decalOnSaucer(1.85, 0.22, 1.0, 1.6);
+  b.sideDecal(-0.82, 0.4, -1.7, 0.9, -Math.PI / 2);
+  b.sideDecal(0.82, 0.4, -1.7, 0.9, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.4, -1.9);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 44 : 16, [1.4, 0.6, 3.2]);
+  return b.finish({ length: 10.2, radius: 3.8 });
+}
+
+function buildOdyssey(b) {
+  const m = b.mats;
+  // long, narrow quantum-slipstream saucer
+  b.saucer({ r: 1.78, t: 0.2, y: 0.9, z: 2.0, scaleZ: 1.85, segments: 88 });
+  // elongated stardrive
+  const hull = b.hullBody({ len: 5.4, r: 0.66, y: 0.26, z: -1.6, front: 0.36, back: 0.52, scaleY: 0.84 });
+  // twin dorsal spars
+  b.mesh(roundedBox(0.36, 0.26, 3.4, 0.08), m.hull, [-0.4, 0.82, -1.0]);
+  b.mesh(roundedBox(0.36, 0.26, 3.4, 0.08), m.hull, [0.4, 0.82, -1.0]);
+  // deflector housing + dish
+  b.deflector({ r: 0.46, y: 0.24, z: 1.35 });
+  // four nacelle mounts: two high, two low, swept far aft
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.18, 0.1], [1.35, 0.62], [1.4, 0.9], [0.36, 0.36]], 0.14, m.hull, [sgn * 1.15, 0.66, -2.2], [0, 0, 0]);
+    b.pylon([[0.2, -0.1], [1.55, -0.42], [1.6, -0.24], [0.42, 0.1]], 0.1, m.trim, [sgn * 1.6, 0.32, -2.6], [0, 0, 0]);
+  }
+  b.nacelle({ x: -1.9, y: 1.28, z: -3.0, len: 4.2, r: 0.22, tilt: -0.06 });
+  b.nacelle({ x: 1.9, y: 1.28, z: -3.0, len: 4.2, r: 0.22, tilt: 0.06 });
+  b.nacelle({ x: -2.15, y: 0.2, z: -2.8, len: 3.7, r: 0.18, tilt: 0.05 });
+  b.nacelle({ x: 2.15, y: 0.2, z: -2.8, len: 3.7, r: 0.18, tilt: -0.05 });
+  b.impulse(0.98, -4.1, 4, 0.8);
+  b.phaserBank(0, 0.42, 3.7, [Math.PI / 2, 0, 0], 1.6);
+  b.phaserBank(1.3, 0.86, 2.2, [0, 0.6, 0], 0.8);
+  b.phaserBank(-1.3, 0.86, 2.2, [0, -0.6, 0], 0.8);
+  b.phaserBank(0, 0.5, -4.0, [0, 0, 0], 0.8);
+  b.torpTube(-0.3, 0.62, 3.05);
+  b.torpTube(0.3, 0.62, 3.05);
+  b.torpTube(-0.3, 0.62, -3.9);
+  b.torpTube(0.3, 0.62, -3.9);
+  b.decalOnSaucer(1.55, 0.2, 0.85, 2.1);
+  b.sideDecal(-0.66, 0.34, -1.9, 0.8, -Math.PI / 2);
+  b.sideDecal(0.66, 0.34, -1.9, 0.8, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.36, -2.2);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 40 : 14, [1.1, 0.5, 3.0]);
+  return b.finish({ length: 10.6, radius: 3.6, quadNacelle: true });
+}
+
 const BUILDERS = {
   miranda: buildMiranda,
+  nx: buildNX,
   constitution: buildConstitution,
   intrepid: buildIntrepid,
+  excelsior: buildExcelsior,
   akira: buildAkira,
   defiant: buildDefiant,
   sovereign: buildSovereign,
+  galaxy: buildGalaxy,
   prometheus: buildPrometheus,
+  odyssey: buildOdyssey,
 };
 
 /** Build a complete starship. Forward is +Z. */
