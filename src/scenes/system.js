@@ -312,9 +312,9 @@ export class SystemScene {
     }
     const g = this.game;
     this.player = buildShip(g.state.shipId, g.shipRecord, this.quality);
-    const startAngle = Math.PI * 0.15;
-    this.player.position.set(0, 70, 520);
-    this.player.lookAt(0, 20, 0);
+    this.player.position.set(-260, 96, 560);
+    this.player.lookAt(0, 10, 0);
+    this.player.rotateY(-0.28);
     this.shipRoot.add(this.player);
     // engine glow sprites
     const thrusters = this.player.userData.thrusters || [];
@@ -494,6 +494,26 @@ export class SystemScene {
 
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
     this.player.position.addScaledVector(forward, this.speed * dt);
+
+    // stellar corona — fly too close to the star and the hull cooks
+    if (this.star && !this.dead) {
+      const sr = this.star.userData.radius || 85;
+      const toStar = this.player.position.clone();
+      const d = toStar.length();
+      const burn = sr * 2.15;
+      if (d < burn) {
+        const heat = 1 - d / burn;
+        this.player.position.addScaledVector(toStar.normalize(), -heat * 220 * dt);
+        this._damagePlayer(heat * 46 * dt, true);
+        this.shake = Math.max(this.shake, heat * 0.8);
+        if (this.time - (this.starWarnTimer || 0) > 4) {
+          this.starWarnTimer = this.time;
+          this.addLog('Corona density critical — shields are boiling off. Break away.', 'hostile');
+          this._flashWarning('STELLAR CORONA');
+          audio.alert();
+        }
+      }
+    }
 
     // gravitational pull from the black hole
     if (this.bh) {

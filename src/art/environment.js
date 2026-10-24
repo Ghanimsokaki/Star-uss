@@ -76,6 +76,7 @@ export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, ligh
   }
   g.userData.core = core;
   g.userData.halo = halo;
+  g.userData.radius = radius;
   return g;
 }
 
