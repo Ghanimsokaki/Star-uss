@@ -24,10 +24,11 @@ Requires WebGL 2 and hardware acceleration. On first load the game shows a boot 
 | Steer / fly | mouse (steer toward the cursor) or `W A S D` | drag the virtual stick (bottom-left) |
 | Fire phasers | hold `Space` / left mouse | hold **FIRE** |
 | Photon torpedo | `F` / right mouse | **TORPEDO** |
-| Evasive boost | `Shift` | **BOOST** |
-| Class ability | `E` | **✦** |
-| Cycle target | `Tab` | tap a contact |
-| Scan / survey | `Q` (or the scan prompt) | tap the scan prompt |
+| Evasive boost | hold `Shift` | **BOOST** |
+| Class ability | `E` | **✷ ABILITY** |
+| Cycle target | `Q` or `Tab` | tap a contact |
+| Scan / survey | `R` (or the scan prompt) | tap **⌖ SCAN** |
+| Throttle / brake | `Z` / `X` | auto |
 | Shipyard | `H` | top bar |
 | Home world | `J` | top bar |
 | Galaxy map | `G` | top bar |
