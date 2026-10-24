@@ -39,6 +39,7 @@ export class SystemScene {
     this.torpCd = 0;
     this.abilityCd = 0;
     this.abilityTimer = 0;
+    this.bluffTimer = 0;
     this.scanCd = 0;
     this.target = null;
     this.reticlePos = { x: 0, y: 0 };
@@ -140,7 +141,7 @@ export class SystemScene {
     this.target = null;
     this.dead = false;
     this.hull = 1; this.shield = 1; this.boost = 1;
-    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0;
+    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0;
     this.projectiles = [];
     this.effects = [];
     this._labelsEl = null;
@@ -570,6 +571,7 @@ export class SystemScene {
     this.torpCd -= dt;
     this.abilityCd = Math.max(0, this.abilityCd - dt);
     this.abilityTimer = Math.max(0, this.abilityTimer - dt);
+    this.bluffTimer = Math.max(0, this.bluffTimer - dt);
     this.scanCd = Math.max(0, this.scanCd - dt);
 
     const autoFire = this.game.state.settings.autoFire;
@@ -699,6 +701,13 @@ export class SystemScene {
       this.abilityTimer = 6;
       this.addLog('Pulse cannons overloaded — fire rate doubled for 6s', 'good');
       audio.upgrade();
+    } else if (ability.id === 'corbomite') {
+      this.bluffTimer = 6;
+      this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.25);
+      this._corbomiteBurst();
+      this.addLog('Corbomite Maneuver — the hostiles are holding fire', 'good');
+      toast('Corbomite Maneuver', 'good', 2200);
+      audio.confirm();
     } else if (ability.id === 'mva') {
       this.abilityTimer = 8;
       this._spawnClones();
@@ -764,6 +773,30 @@ export class SystemScene {
     sprite.scale.setScalar(1.6);
     this.fxRoot.add(sprite);
     this.effects.push({ obj: sprite, life: 0.32, maxLife: 0.32, kind: 'impact', grow: 14 });
+  }
+
+  _corbomiteBurst() {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(2.5, 3.4, 64),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color('#8fd6ff'), transparent: true, opacity: 0.95,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
+      })
+    );
+    ring.position.copy(this.player.position);
+    ring.quaternion.copy(this.camera.quaternion);
+    this.fxRoot.add(ring);
+    this.effects.push({ obj: ring, life: 0.9, maxLife: 0.9, kind: 'impact', grow: 26 });
+    const flash = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('#bcaeff'), color: new THREE.Color('#bcaeff'), transparent: true,
+      opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    }));
+    flash.position.copy(this.player.position);
+    flash.scale.setScalar(9);
+    this.fxRoot.add(flash);
+    this.effects.push({ obj: flash, life: 0.6, maxLife: 0.6, kind: 'impact', grow: 22 });
+    // the bluff itself: a wash of false sensor returns
+    this._spawnBeam(this.player.position.clone().add(V(0, 4, 0)), this.player.position.clone().add(V(0, 60, 0)), '#bcaeff', 1.4);
   }
 
   _warpFlash(pos) {
@@ -1167,7 +1200,7 @@ export class SystemScene {
 
       // firing
       e.fireCd -= dt;
-      if (!e.cloaked && e.fireCd <= 0 && dist < 520) {
+      if (!e.cloaked && this.bluffTimer <= 0 && e.fireCd <= 0 && dist < 520) {
         const angle = forward.dot(dir);
         if (angle > 0.72) {
           e.fireCd = Math.max(0.5, 1.6 / (e.def.fireRate || 1)) * (0.7 + Math.random() * 0.6);

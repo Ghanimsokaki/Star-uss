@@ -458,6 +458,58 @@ function buildMiranda(b) {
   return b.finish({ length: 6.4, radius: 2.2 });
 }
 
+function buildConstitution(b) {
+  const m = b.mats;
+  // big circular primary hull, set forward and high
+  b.saucer({ r: 1.62, t: 0.19, y: 1.02, z: 1.35, scaleZ: 1.0, segments: 88 });
+  // lower sensor dome under the saucer
+  const sensor = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), m.trim);
+  sensor.position.set(0, 1.02 - 0.19 * 0.95, 1.35);
+  b.add(sensor);
+  // slim dorsal neck sweeping aft and down to the engineering hull
+  b.pylon([[0.3, 0], [0.3, 0.68], [-0.26, 0.68], [-0.26, 0]], 0.26, m.hull, [0, 0.34, 0.82], [0, 0, 0]);
+  b.mesh(roundedBox(0.26, 0.12, 0.86, 0.04), m.trim, [0, 0.7, 0.9]);
+  // slim cylindrical secondary hull
+  const hull = b.hullBody({ len: 2.9, r: 0.4, y: 0.3, z: -1.15, front: 0.55, back: 0.78, scaleY: 0.94 });
+  hull.rotation.x = 0.006;
+  // aft end cap / shuttlebay
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.27, 0.24, 28), m.trim);
+  cap.rotation.x = Math.PI / 2;
+  cap.position.set(0, 0.3, -2.52);
+  b.add(cap);
+  b.mesh(roundedBox(0.42, 0.26, 0.1, 0.04), m.dark, [0, 0.36, -2.62]);
+  // main deflector dish at the bow of the engineering hull
+  b.deflector({ r: 0.27, y: 0.3, z: 0.5 });
+  // warp nacelle pylons: straight, swept up and out
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.35, -0.16], [1.32, 0.42], [1.32, 0.66], [0.2, 0.1]], 0.13, m.hull, [sgn * 1.05, 0.34, -1.62], [0, 0, 0]);
+  }
+  // twin cylindrical nacelles
+  b.nacelle({ x: -1.7, y: 1.08, z: -2.2, len: 3.2, r: 0.205, tilt: -0.02 });
+  b.nacelle({ x: 1.7, y: 1.08, z: -2.2, len: 3.2, r: 0.205, tilt: 0.02 });
+  // impulse engines on the aft face of the saucer rim
+  b.impulse(1.0, -0.12, 2, 0.5);
+  // phaser banks
+  b.phaserBank(0, 0.42, 2.55, [Math.PI / 2, 0, 0], 1.0);
+  b.phaserBank(0, 1.22, 1.5, [0, 0, 0], 1.1);
+  b.phaserBank(1.15, 1.06, 1.0, [0, 0.7, 0], 0.6);
+  b.phaserBank(-1.15, 1.06, 1.0, [0, -0.7, 0], 0.6);
+  b.phaserBank(0, 0.3, -2.6, [0, 0, 0], 0.6);
+  // photon torpedo launchers under the saucer
+  b.torpTube(-0.26, 0.72, 2.1);
+  b.torpTube(0.26, 0.72, 2.1);
+  // hull markings
+  b.decalOnSaucer(1.4, 0.19, 1.02, 1.3);
+  b.sideDecal(-0.42, 0.32, -1.1, 0.58, -Math.PI / 2);
+  b.sideDecal(0.42, 0.32, -1.1, 0.58, Math.PI / 2);
+  // hull plating detail, kept on the engineering hull where it belongs
+  const detailRoot = new THREE.Group();
+  detailRoot.position.set(0, 0.34, -1.5);
+  b.group.add(detailRoot);
+  greeble(detailRoot, m.dark, b.detail ? 22 : 8, [0.7, 0.3, 1.9]);
+  return b.finish({ length: 7.2, radius: 2.6 });
+}
+
 function buildIntrepid(b) {
   const m = b.mats;
   b.saucer({ r: 1.42, t: 0.15, y: 0.5, z: 0.85, scaleZ: 1.35 });
@@ -627,6 +679,7 @@ function buildPrometheus(b) {
 
 const BUILDERS = {
   miranda: buildMiranda,
+  constitution: buildConstitution,
   intrepid: buildIntrepid,
   akira: buildAkira,
   defiant: buildDefiant,

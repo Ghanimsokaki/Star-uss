@@ -41,6 +41,15 @@ export const MISSIONS = [
     check: (s) => s.stats.systems >= 2,
   },
   {
+    id: 'm-enterprise',
+    title: 'The Legend Herself',
+    desc: 'Commission the Constitution-class U.S.S. Enterprise, NCC-1701.',
+    hint: 'Shipyard → Fleet → Constitution-class',
+    reward: { credits: 7500, research: 120, dilithium: 40 },
+    // lenient on old saves: any hull of the Enterprise's tier or above counts
+    check: (s) => s.ownedShips.some((id) => ['constitution', 'akira', 'defiant', 'sovereign', 'prometheus'].includes(id)),
+  },
+  {
     id: 'm-intrepid',
     title: 'A Longer Reach',
     desc: 'Commission the Intrepid-class U.S.S. Voyager.',
