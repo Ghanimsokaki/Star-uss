@@ -77,12 +77,35 @@ Five ship systems — hull, shields, weapons, engines, sensors — upgrade indep
 
 ---
 
+## Your own hulls (Meshy)
+
+Every one of the sixteen classes can be replaced by a model you made yourself
+(Meshy or any other tool). Drop a GLB into `public/models/` named after the
+class, run the game, and the hull is swapped in — rescaled, centred and turned
+to face the right way automatically:
+
+```bash
+cp ~/Downloads/meshy_export.glb public/models/sovereign.glb
+npm run models:check -- public/models/sovereign.glb   # optional sanity check
+npm run dev                                           # manifest rebuilds, hull loads
+```
+
+The procedural hull stays as the instant first frame and as the fallback if a
+file is missing or broken. Export as **GLB**, 2K textures, low/medium poly,
+under ~15 MB. Full recipe, all class ids, per-ship orientation tuning and a
+troubleshooting table: **[docs/MODELS.md](docs/MODELS.md)**. Per-ship tweaks
+live in the ready-made `models.config.json`.
+
+---
+
 ## Project layout
 
 ```
 index.html               app shell, boot screen, WebGL fallback
 vite.config.js           dev server (0.0.0.0), manual chunking
 public/assets/earth/     real Earth day / night / water / topology / cloud JPEGs
+public/models/           your ship GLBs (drop-in) + generated manifest.json
+docs/MODELS.md           Meshy export recipe and the model import pipeline
 
 src/main.js              App: viewport + input + scene registry, chrome, warp overlay, RAF loop
 src/style.css            LCARS-flavoured glass UI, responsive + touch layouts
@@ -100,6 +123,7 @@ src/scenes/              title, earth, hangar, galaxy, system (flight & combat)
 - `Game` is the single source of truth. Scenes read `game.state` and call methods; a tiny event bus broadcasts `change`, `rankup`, `mission`.
 - Every scene follows the same contract: `constructor(app)`, lazy `_build()`, `enter()`, `exit()`, `update(dt, t)`, `resize(w, h)`.
 - Procedural textures are cached by key and **never** disposed with the meshes that use them.
+- Ship models are a build-time manifest, not a hard dependency: `src/art/imported.js` fetches `public/models/manifest.json`, hot-swaps a GLB in when it exists, and leaves the procedural hull in place otherwise. The scanner (`scripts/scan-models.mjs`) runs before `dev`/`build` and watches the folder while the dev server is up.
 
 ---
 

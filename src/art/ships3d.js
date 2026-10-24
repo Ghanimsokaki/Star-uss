@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { hullTextures, registryTexture, emblemTexture, glowTexture, hexToRgb } from './textures.js';
 import { SHIP_CLASSES, PALETTES } from '../data/ships.js';
+import { tryApplyModel } from './imported.js';
 
 /* ============================================================ geometry tools */
 export function bodyLathe(len, radius, opts = {}) {
@@ -89,8 +90,17 @@ export function greeble(group, material, count, box, rng = Math.random) {
 }
 
 export function disposeObject3D(root) {
+  if (!root) return;
+  // tell a pending model load not to attach to a dead object
+  root.userData.disposed = true;
+  const underImported = (o) => {
+    let n = o;
+    while (n) { if (n.userData?.imported) return true; n = n.parent; }
+    return false;
+  };
   root.traverse((o) => {
-    if (o.geometry) o.geometry.dispose();
+    // imported GLB geometry is shared between instances — the loader cache owns it
+    if (o.geometry && !underImported(o)) o.geometry.dispose();
     if (o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => {
@@ -1048,7 +1058,7 @@ const BUILDERS = {
 };
 
 /** Build a complete starship. Forward is +Z. */
-export function buildShip(classId, record = {}, quality = 1) {
+export function buildShip(classId, record = {}, quality = 1, opts = {}) {
   const cls = SHIP_CLASSES[classId] || SHIP_CLASSES.miranda;
   const b = new ShipBuilder(cls.id, record, quality);
   const build = BUILDERS[cls.id] || BUILDERS.miranda;
@@ -1056,6 +1066,13 @@ export function buildShip(classId, record = {}, quality = 1) {
   group.name = `ship-${cls.id}`;
   group.userData.classId = cls.id;
   group.userData.length = group.userData.length || 6;
+
+  // If a Meshy / GLB model exists for this class, hot-swap it in asynchronously.
+  // The procedural hull renders until the file is parsed, and stays as a
+  // fallback if the file is missing or broken.
+  if (opts.importModel !== false) {
+    tryApplyModel(group, cls.id, cls).catch((e) => console.warn('[models]', e?.message || e));
+  }
   return group;
 }
 
