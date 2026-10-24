@@ -834,17 +834,164 @@ function buildOdyssey(b) {
   return b.finish({ length: 10.6, radius: 3.6, quadNacelle: true });
 }
 
+/* ------------------------------------------------ Kelvin timeline builders */
+function buildKelvin(b) {
+  const m = b.mats;
+  b.saucer({ r: 1.2, t: 0.15, y: 0.58, z: 0.86, scaleZ: 1.16, segments: 76 });
+  const hull = b.hullBody({ len: 2.5, r: 0.42, y: 0.2, z: -0.55, front: 0.44, back: 0.62, scaleY: 0.9 });
+  b.mesh(roundedBox(0.5, 0.34, 1.2, 0.08), m.hull, [0, 0.34, -0.15]);
+  b.mesh(roundedBox(0.2, 0.2, 0.5, 0.05), m.trim, [-0.34, 0.3, -0.95]);
+  b.mesh(roundedBox(0.2, 0.2, 0.5, 0.05), m.trim, [0.34, 0.3, -0.95]);
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.14, -0.06], [0.98, 0.24], [0.98, 0.42], [0.16, 0.12]], 0.09, m.hull, [sgn * 0.7, 0.36, -0.82], [0, 0, 0]);
+  }
+  b.nacelle({ x: -1.26, y: 0.6, z: -1.0, len: 2.1, r: 0.16, tilt: -0.01 });
+  b.nacelle({ x: 1.26, y: 0.6, z: -1.0, len: 2.1, r: 0.16, tilt: 0.01 });
+  b.deflector({ r: 0.27, y: 0.2, z: 0.52 });
+  b.impulse(0.5, -1.02, 2, 0.34);
+  b.phaserBank(0, 0.36, 1.86, [Math.PI / 2, 0, 0], 0.8);
+  b.phaserBank(0.8, 0.62, 0.95, [0, 0.55, 0], 0.5);
+  b.phaserBank(-0.8, 0.62, 0.95, [0, -0.55, 0], 0.5);
+  b.torpTube(-0.22, 0.34, 1.5);
+  b.torpTube(0.22, 0.34, 1.5);
+  b.decalOnSaucer(1.0, 0.15, 0.5, 0.9);
+  b.sideDecal(-0.42, 0.22, -0.6, 0.46, -Math.PI / 2);
+  b.sideDecal(0.42, 0.22, -0.6, 0.46, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.24, -0.8);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 16 : 6, [0.7, 0.3, 1.2]);
+  return b.finish({ length: 5.2, radius: 1.9 });
+}
+
+function buildKelvinConstitution(b) {
+  const m = b.mats;
+  const refit = b.cls.id === 'kelvinA';
+  b.saucer({ r: 1.78, t: 0.19, y: 0.94, z: refit ? 1.42 : 1.3, scaleZ: 1.12, segments: 92 });
+  b.pylon([[0.36, 0], [0.36, 0.72], [-0.34, 0.72], [-0.34, 0]], 0.38, m.hull, [0, 0.32, 0.86], [0, 0, 0]);
+  const hull = b.hullBody({ len: 4.0, r: 0.54, y: 0.26, z: -1.2, front: 0.46, back: 0.6, scaleY: 0.92 });
+  b.mesh(roundedBox(0.9, 0.3, 2.4, 0.1), m.hull, [0, 0.78, -1.1]);
+  b.mesh(roundedBox(0.44, 0.14, 0.9, 0.05), m.trim, [0, 0.5, 0.2]);
+  b.mesh(roundedBox(0.72, 0.38, 0.42, 0.06), m.trim, [0, 0.42, -3.1]);
+  for (const sgn of [-1, 1]) {
+    if (refit) b.pylon([[0.26, 0.12], [1.34, 0.66], [1.36, 0.92], [0.3, 0.36]], 0.15, m.hull, [sgn * 1.1, 0.52, -1.95], [0, 0, 0]);
+    else b.pylon([[0.24, 0.05], [1.3, 0.44], [1.32, 0.68], [0.28, 0.24]], 0.15, m.hull, [sgn * 1.1, 0.5, -1.85], [0, 0, 0]);
+  }
+  const ny = refit ? 1.16 : 1.08;
+  b.nacelle({ x: -1.66, y: ny, z: -2.25, len: 3.25, r: 0.225, tilt: -0.02 });
+  b.nacelle({ x: 1.66, y: ny, z: -2.25, len: 3.25, r: 0.225, tilt: 0.02 });
+  b.deflector({ r: 0.38, y: 0.26, z: 0.82 });
+  b.impulse(0.84, -0.3, 2, 0.52);
+  b.phaserBank(0, 0.4, 2.72, [Math.PI / 2, 0, 0], 1.2);
+  b.phaserBank(0, 1.0, 1.85, [0, 0, 0], 1.1);
+  b.phaserBank(1.35, 0.98, 0.9, [0, 0.65, 0], 0.7);
+  b.phaserBank(-1.35, 0.98, 0.9, [0, -0.65, 0], 0.7);
+  b.phaserBank(0, 0.46, -3.05, [0, 0, 0], 0.7);
+  if (refit) {
+    b.phaserBank(0.9, 0.72, -2.2, [0, 0.4, 0], 0.6);
+    b.phaserBank(-0.9, 0.72, -2.2, [0, -0.4, 0], 0.6);
+  }
+  b.torpTube(-0.28, 0.66, 2.2);
+  b.torpTube(0.28, 0.66, 2.2);
+  if (refit) {
+    b.torpTube(-0.5, 0.56, 2.05);
+    b.torpTube(0.5, 0.56, 2.05);
+  }
+  b.decalOnSaucer(1.5, 0.19, 0.95, 1.35);
+  b.sideDecal(-0.56, 0.3, -1.4, 0.64, -Math.PI / 2);
+  b.sideDecal(0.56, 0.3, -1.4, 0.64, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.34, -1.6);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? (refit ? 36 : 28) : 10, [1.0, 0.42, 2.2]);
+  return b.finish({ length: refit ? 8.8 : 8.4, radius: 3.0 });
+}
+
+function buildFranklin(b) {
+  const m = b.mats;
+  b.saucer({ r: 1.02, t: 0.15, y: 0.54, z: 0.92, scaleZ: 1.14, segments: 64 });
+  const hull = b.hullBody({ len: 2.3, r: 0.4, y: 0.16, z: -0.62, front: 0.5, back: 0.72, scaleY: 0.86 });
+  b.mesh(roundedBox(0.56, 0.26, 1.5, 0.07), m.hull, [0, 0.36, -0.5]);
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.16, 0.02], [0.9, -0.24], [0.94, -0.06], [0.22, 0.14]], 0.08, m.hull, [sgn * 0.72, 0.2, -0.95], [0, 0, 0]);
+  }
+  b.nacelle({ x: -1.02, y: 0.02, z: -1.25, len: 1.95, r: 0.15, tilt: 0.12 });
+  b.nacelle({ x: 1.02, y: 0.02, z: -1.25, len: 1.95, r: 0.15, tilt: -0.12 });
+  b.deflector({ r: 0.22, y: 0.16, z: 0.55 });
+  b.impulse(0.42, -1.5, 2, 0.3);
+  b.phaserBank(0, 0.32, 1.78, [Math.PI / 2, 0, 0], 0.7);
+  b.phaserBank(0.7, 0.55, 1.0, [0, 0.5, 0], 0.45);
+  b.phaserBank(-0.7, 0.55, 1.0, [0, -0.5, 0], 0.45);
+  b.phaserBank(0, 0.42, -1.55, [0, 0, 0], 0.5);
+  b.torpTube(-0.2, 0.3, 1.42);
+  b.torpTube(0.2, 0.3, 1.42);
+  b.decalOnSaucer(0.86, 0.15, 0.5, 0.8);
+  b.sideDecal(-0.38, 0.2, -0.7, 0.4, -Math.PI / 2);
+  b.sideDecal(0.38, 0.2, -0.7, 0.4, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.2, -1.0);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 14 : 6, [0.6, 0.28, 1.1]);
+  return b.finish({ length: 4.8, radius: 1.7 });
+}
+
+function buildVengeance(b) {
+  const m = b.mats;
+  const profile = [
+    [0, 3.6], [0.72, 2.6], [1.28, 1.1], [1.22, -1.5], [0.78, -2.7], [0, -3.05],
+    [-0.78, -2.7], [-1.22, -1.5], [-1.28, 1.1], [-0.72, 2.6],
+  ];
+  const wedge = extrudeProfile(profile, 0.86, 0.14);
+  wedge.rotateX(-Math.PI / 2);
+  b.mesh(wedge, m.hull, [0, 0.5, 0]);
+  b.mesh(roundedBox(1.5, 0.42, 3.0, 0.14), m.hull, [0, 1.0, 0.5]);
+  b.mesh(roundedBox(0.9, 0.2, 0.9, 0.06), m.trim, [0, 1.24, 1.5]);
+  for (const sgn of [-1, 1]) {
+    const prong = b.mesh(roundedBox(0.24, 0.3, 2.1, 0.08), m.dark, [sgn * 1.15, 0.42, 2.1]);
+    prong.rotation.y = sgn * 0.09;
+  }
+  b.deflector({ r: 0.5, y: 0.5, z: 3.45 });
+  for (const sgn of [-1, 1]) {
+    b.pylon([[0.9, 0.1], [1.8, 0.42], [1.84, 0.72], [0.95, 0.4]], 0.22, m.hull, [sgn * 1.25, 0.62, -2.2], [0, 0, 0]);
+  }
+  b.nacelle({ x: -2.05, y: 0.74, z: -3.35, len: 3.4, r: 0.26, tilt: -0.03 });
+  b.nacelle({ x: 2.05, y: 0.74, z: -3.35, len: 3.4, r: 0.26, tilt: 0.03 });
+  b.impulse(1.05, -2.5, 4, 0.8);
+  b.phaserBank(0, 0.62, 3.05, [Math.PI / 2, 0, 0], 1.6);
+  b.phaserBank(1.05, 0.62, 1.2, [0, 0.5, 0], 0.9);
+  b.phaserBank(-1.05, 0.62, 1.2, [0, -0.5, 0], 0.9);
+  b.phaserBank(0, 0.62, -2.85, [0, 0, 0], 1.0);
+  for (let i = 0; i < 4; i++) {
+    const x = -0.75 + (i * 1.5) / 3;
+    b.torpTube(x, 0.72, 1.9);
+    b.torpTube(x, 0.72, -2.3);
+  }
+  b.decalOnSaucer(1.1, 0.2, 0.95, 1.2);
+  b.sideDecal(-0.9, 0.34, -1.2, 0.8, -Math.PI / 2);
+  b.sideDecal(0.9, 0.34, -1.2, 0.8, Math.PI / 2);
+  const detail = new THREE.Group();
+  detail.position.set(0, 0.4, -1.8);
+  b.group.add(detail);
+  greeble(detail, m.dark, b.detail ? 44 : 16, [1.6, 0.5, 2.6]);
+  return b.finish({ length: 10.8, radius: 3.4 });
+}
+
 const BUILDERS = {
   miranda: buildMiranda,
+  kelvin: buildKelvin,
   nx: buildNX,
   constitution: buildConstitution,
+  kelvinconn: buildKelvinConstitution,
+  kelvinA: buildKelvinConstitution,
   intrepid: buildIntrepid,
   excelsior: buildExcelsior,
+  franklin: buildFranklin,
   akira: buildAkira,
   defiant: buildDefiant,
   sovereign: buildSovereign,
   galaxy: buildGalaxy,
   prometheus: buildPrometheus,
+  vengeance: buildVengeance,
   odyssey: buildOdyssey,
 };
 
