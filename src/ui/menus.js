@@ -88,11 +88,11 @@ export function showHowTo() {
       <div class="grid2" style="gap:10px">
         <div class="codex-entry">
           <h4>Flight — Desktop</h4>
-          <p><b>Mouse</b> steers · <b>W A S D</b> steer · <b>Space / Left click</b> phasers · <b>F / Right click</b> torpedoes · <b>Shift</b> boost · <b>Q</b> target · <b>E</b> scan · <b>Esc</b> close panels</p>
+          <p><b>Mouse</b> or <b>W A S D</b> steer · <b>Space</b> / left click phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>Shift</b> boost · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>V</b> weapons assist on/off · <b>Esc</b> close panels</p>
         </div>
         <div class="codex-entry">
           <h4>Flight — Touch</h4>
-          <p>Drag the <b>left stick</b> to steer. Tap <b>FIRE</b> for phasers, <b>TORP</b> for torpedoes, <b>BOOST</b> for a burst of speed and <b>SCAN</b> when you are close to a planet or anomaly.</p>
+          <p>Drag the <b>left stick</b> to steer. Tap <b>FIRE</b> for phasers, <b>TORP</b> for torpedoes, <b>✷</b> for your ship's special ability, <b>BOOST</b> for a burst of speed, <b>SCAN</b> near a planet or anomaly, and <b>WARP</b> to jump to another star system.</p>
         </div>
         <div class="codex-entry">
           <h4>Earth &amp; Civilisation</h4>
@@ -100,8 +100,12 @@ export function showHowTo() {
         </div>
         <div class="codex-entry">
           <h4>Combat</h4>
-          <p>Phasers lock automatically onto the nearest target inside the forward arc. Torpedoes are slower but hit far harder. Keep your bow pointed at the enemy and watch your shield regeneration.</p>
+          <p>Phasers lock automatically onto the nearest target inside the forward arc, and <b>weapons assist</b> gently steers you toward your locked target — turn it off with <b>V</b> if you prefer full manual control. Torpedoes are slower but hit far harder.</p>
         </div>
+      </div>
+      <div class="codex-entry" style="margin-top:10px">
+        <h4>Travelling Between Stars</h4>
+        <p>Press <b>T</b> (or the <b>WARP</b> button) to open the galaxy map. Pick a star on the left, then hit <b>Engage warp</b> or press <b>Enter</b> — you will get a full warp-jump sequence and arrive in the new system. Each jump costs dilithium based on distance and threat.</p>
       </div>
       <div class="codex-entry" style="margin-top:10px">
         <h4>Survive the Singularity</h4>

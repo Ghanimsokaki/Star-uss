@@ -13,6 +13,7 @@ import { SystemScene } from './scenes/system.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
 import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro } from './ui/menus.js';
 import { isMobile, storage, clamp } from './core/util.js';
+import { playWarp } from './ui/warp.js';
 
 const SCENES = { title: TitleScene, earth: EarthScene, hangar: HangarScene, galaxy: GalaxyScene, system: SystemScene };
 const SCENE_LABEL = { title: 'Title', earth: 'Earth', hangar: 'Shipyard', galaxy: 'Galaxy map', system: 'Space' };
@@ -170,47 +171,8 @@ class App {
     this.current?.resize?.(window.innerWidth, window.innerHeight);
   }
 
-  /**
-   * Cinematic warp jump. The overlay lives on <body> so it survives the scene
-   * switch that happens halfway through the jump.
-   */
-  warpTransition({ title = 'Warp', sub = '', duration = 2200, onMid = null } = {}) {
-    const streaks = Array.from({ length: 160 }, () => {
-      const a = Math.random() * Math.PI * 2;
-      const d = 8 + Math.random() * 60;
-      return `<i style="--a:${a.toFixed(3)}rad;--d:${d.toFixed(1)};--delay:${(Math.random() * 0.5).toFixed(2)}s;--dur:${(0.35 + Math.random() * 0.5).toFixed(2)}s;--len:${(20 + Math.random() * 70).toFixed(0)}"></i>`;
-    }).join('');
-
-    const overlay = el(`
-      <div class="warp-overlay" aria-hidden="true">
-        <div class="warp-tunnel">${streaks}</div>
-        <div class="warp-core"></div>
-        <div class="warp-flash"></div>
-        <div class="warp-copy">
-          <div class="warp-kicker">Engaging warp drive</div>
-          <div class="warp-title">${title}</div>
-          <div class="warp-sub">${sub}</div>
-          <div class="warp-progress"><i id="warp-fill"></i></div>
-        </div>
-      </div>`);
-    document.body.appendChild(overlay);
-    const fill = overlay.querySelector('#warp-fill');
-    const core = overlay.querySelector('.warp-core');
-    requestAnimationFrame(() => {
-      overlay.classList.add('go');
-      if (fill) fill.style.width = '100%';
-    });
-
-    const mid = Math.max(320, duration * 0.52);
-    setTimeout(() => {
-      overlay.classList.add('flash');
-      try { onMid?.(); } catch (e) { console.error(e); }
-    }, mid);
-    setTimeout(() => {
-      if (core) core.style.opacity = '0';
-      overlay.classList.add('out');
-      setTimeout(() => overlay.remove(), 620);
-    }, duration);
+  warpTransition(opts = {}) {
+    return playWarp(opts);
   }
 
   _bindGlobal() {

@@ -23,6 +23,22 @@ Requires WebGL 2 and hardware acceleration. On first load the game shows a boot 
 | --- | --- | --- |
 | Steer / fly | mouse (steer toward the cursor) or `W A S D` | drag the virtual stick (bottom-left) |
 | Fire phasers | hold `Space` / left mouse | hold **FIRE** |
+| Photon torpedo | `F` / right mouse | **TORP** |
+| Ship ability | `E` (or `1`) | **✷ ABILITY** |
+| Evasive boost | hold `Shift` | **BOOST** |
+| Cycle target | `Q` or `Tab` | tap a contact |
+| Scan / survey | `R` (or the scan prompt) | **⌖ SCAN** |
+| **Warp** | **`T`** then pick a star, `Enter` to engage | **WARP** button |
+| Weapons assist | `V` toggles | in Settings |
+| Throttle / brake | `Z` / `X` | auto |
+| Shipyard / Earth / Galaxy / Missions | `H` / `J` / `G` / `M` | top bar |
+
+The helm is fly-by-wire: steering is smoothed, the mouse has a generous centre dead zone, and **weapons assist**
+gently pulls you toward your locked target (toggle with `V` or in Settings, along with pitch inversion).
+
+--- | --- | --- |
+| Steer / fly | mouse (steer toward the cursor) or `W A S D` | drag the virtual stick (bottom-left) |
+| Fire phasers | hold `Space` / left mouse | hold **FIRE** |
 | Photon torpedo | `F` / right mouse | **TORPEDO** |
 | Evasive boost | hold `Shift` | **BOOST** |
 | Class ability | `E` | **✷ ABILITY** |

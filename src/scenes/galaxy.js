@@ -161,6 +161,8 @@ export class GalaxyScene {
   }
 
   exit() {
+    if (this._enterKey) window.removeEventListener('keydown', this._enterKey);
+    this._enterKey = null;
     this._bindings?.forEach((off) => off());
     this._bindings = [];
     this.ui?.remove();
@@ -242,6 +244,18 @@ export class GalaxyScene {
 
     this._refreshDetail();
     this._refreshLabels();
+    if (this._enterKey) window.removeEventListener('keydown', this._enterKey);
+    this._enterKey = (e) => {
+      if (e.key !== 'Enter' || !this.selectedId) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '')) return;
+      const sys = this.game.galaxy.byId[this.selectedId];
+      const cur = this.game.state.currentSystemId === this.selectedId;
+      if (!sys || cur) return;
+      const can = this.game.canWarpTo(sys.id);
+      if (can.ok) this._engage(sys);
+      else toast(can.why, 'warn');
+    };
+    window.addEventListener('keydown', this._enterKey);
     for (const [id, node] of this._nodes) {
       node.userData.selRing.visible = id === this.selectedId;
       node.userData.selRing.material.opacity = 0.9;
@@ -312,13 +326,20 @@ export class GalaxyScene {
     } else {
       foot.innerHTML = `
         ${!can.ok ? `<div class="tiny" style="color:var(--amber);margin-bottom:8px">${escapeHtml(can.why)}</div>` : ''}
-        <button class="btn primary wide" id="engage" ${can.ok ? '' : 'disabled'}>Engage warp · ${cost} dilithium</button>
+        <button class="btn primary wide" id="engage" ${can.ok ? '' : 'disabled'}>✧ Engage warp · ${cost} dilithium <span class="kbd">Enter</span></button>
         <div class="row between small faint" style="margin-top:8px;width:100%"><span>Distance</span><span>${Math.hypot(sys.x - g.system.x, sys.y - g.system.y).toFixed(1)} ly</span></div>`;
       $('#engage', foot)?.addEventListener('click', () => this._engage(sys));
+      // double-click a system row to jump straight there
+      $$('[data-sys]', this.ui).forEach((row) => {
+        row.addEventListener('dblclick', () => { if (can.ok) this._engage(sys); });
+      });
     }
   }
 
   _engage(sys) {
+    if (!sys || this._jumping) return;
+    this._jumping = true;
+    setTimeout(() => { this._jumping = false; }, 300);
     const g = this.game;
     const check = g.canWarpTo(sys.id);
     if (!check.ok) { toast(check.why, 'warn'); audio.error(); return; }

@@ -414,12 +414,12 @@ export class SystemScene {
           <div class="syslog" id="syslog"></div>
 
           <div class="hud-actions">
-            <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system"><span class="ico">✧</span><span>WARP</span><span class="kc">T</span></button>
-            <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact"><span class="ico">⌖</span><span>SCAN</span><span class="kc">R</span></button>
-            <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability"><span class="ico">✷</span><span>ABILITY</span><span class="kc">E</span></button>
-            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost"><span class="ico">»</span><span>BOOST</span><span class="kc">⇧</span></button>
-            <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo"><span class="ico">◉</span><span>TORP</span><span class="kc">F</span></button>
-            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers"><span class="ico">✦</span><span>FIRE</span><span class="kc">SPC</span></button>
+            <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system (T)"><span class="ico">✧</span><span class="lbl">WARP</span><span class="kc">T</span></button>
+            <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact (R)"><span class="ico">⌖</span><span class="lbl">SCAN</span><span class="kc">R</span></button>
+            <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability (E)"><span class="ico">✷</span><span class="lbl">ABILITY</span><span class="kc">E</span></button>
+            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost (hold Shift)"><span class="ico">»</span><span class="lbl">BOOST</span><span class="kc">⇧</span></button>
+            <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo (F)"><span class="ico">◉</span><span class="lbl">TORP</span><span class="kc">F</span></button>
+            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold Space)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">SPC</span></button>
           </div>
           <div class="control-strip">
             <span><b>WASD</b> / mouse — steer</span><span class="sep"></span>
@@ -448,8 +448,8 @@ export class SystemScene {
       toast('Select a star system, then Engage warp', 'good', 3200);
     };
     const ab = $('#ability-btn', this.ui);
-    ab.querySelector('span:last-child').textContent = (ability?.name || 'Ability').split(' ')[0].toUpperCase();
-    ab.title = ability?.desc || '';
+    ab.querySelector('.lbl').textContent = (ability?.name || 'Ability').split(' ')[0].toUpperCase();
+    ab.title = `${ability?.name || 'Ability'} — ${ability?.desc || ''} (E)`;
     this._refreshMissionLine();
     this.planetsSurveyed = 0;
     this._buildObjectLabels();
@@ -577,7 +577,7 @@ export class SystemScene {
     }
 
     // player visual roll
-    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, -steer.x * 0.45, 4, dt);
+    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, -steerX * 0.45, 4, dt);
     if (this.player.children[0]) this.player.children[0].rotation.z = modelRoll;
 
     // engine glow pulsing
@@ -1275,7 +1275,7 @@ export class SystemScene {
     this.scanTarget = near;
     btn.classList.toggle('ready', !!(near && near.inRange));
     btn.disabled = !(near && near.inRange) || this.scanCd > 0;
-    const label = btn.querySelector('span:last-child');
+    const label = btn.querySelector('.lbl');
     if (label) label.textContent = (near && near.inRange) ? (near.kind === 'planet' ? 'SURVEY' : 'ANALYSE') : 'SCAN';
   }
 
@@ -1591,8 +1591,9 @@ export class SystemScene {
       const ready = this.abilityCd <= 0;
       ab.classList.toggle('ready', ready);
       ab.disabled = !ready;
-      const lbl = ab.querySelector('span:last-child');
-      if (lbl) lbl.textContent = ready ? (this.game.shipClass.ability.name.split(' ')[0].toUpperCase()) : `${Math.ceil(this.abilityCd)}s`;
+      const lbl = ab.querySelector('.lbl');
+      const key = (this.game.shipClass.ability.name || 'Ability').split(' ')[0].toUpperCase();
+      if (lbl) lbl.textContent = ready ? key : `${Math.ceil(this.abilityCd)}s`;
     }
     const tf = $('#throttle-fill', this.ui);
     if (tf) tf.style.height = `${(this.boosting ? 100 : 72)}%`;
