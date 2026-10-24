@@ -141,6 +141,16 @@ export const TECH_ORDER = ['sif', 'phaserTuning', 'sensorNet', 'regenShields', '
 /* ------------------------------------------------------------------ codex */
 export const CODEX_ARTICLES = [
   {
+    title: 'The Kelvin Timeline',
+    tag: 'Timelines',
+    body: 'When the Romulan mining vessel Narada fell through a singularity in 2233, it arrived 154 years early and destroyed the U.S.S. Kelvin. The Federation that rebuilt itself afterwards had the same flag and a different history: larger ships, earlier wars, and a James T. Kirk who never knew his father. Both timelines are real; the divergence happened at the Kelvin, and everything since carries her name.',
+  },
+  {
+    title: 'The Narada and the Red Matter',
+    tag: 'Timelines',
+    body: 'A 24th-century Romulan mining ship retrofitted with Borg-derived technology, crewed by miners who blamed the Federation for the loss of Romulus. Her captain used red matter \u2014 a volatile substance that collapses matter into a singularity \u2014 to destroy Vulcan. The Narada was later destroyed by the Enterprise, but not before she had redrawn the map of the quadrant.',
+  },
+  {
     title: 'The United Federation of Planets',
     tag: 'Politics',
     body: 'Founded in 2161 by Humans, Vulcans, Andorians and Tellarites. Over 150 member worlds share science, defence and trade under the Articles of Federation. Starfleet is its exploratory and defensive arm — not a military, whatever the Klingons say.',

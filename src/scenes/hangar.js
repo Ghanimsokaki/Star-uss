@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildShip, disposeObject3D } from '../art/ships3d.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
 import { el, $, $$, toast, fmtC, fmt, modal, bar } from '../ui/dom.js';
-import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, NACELLE_COLORS, DEFLECTOR_COLORS, MAX_UPGRADE, computeStats } from '../data/ships.js';
+import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, NACELLE_COLORS, DEFLECTOR_COLORS, MAX_UPGRADE, computeStats, TIMELINES } from '../data/ships.js';
 import { TECHS, TECH_ORDER } from '../data/tech.js';
 import { audio } from '../core/audio.js';
 import { escapeHtml } from '../core/util.js';
@@ -218,10 +218,13 @@ export class HangarScene {
         if (g.rank < cls.rankReq) req.push(`Rank ${cls.rankReq}`);
         if (cls.researchReq && g.techCount() < cls.researchReq) req.push(`${cls.researchReq} techs`);
       }
+      const tl = TIMELINES[cls.timeline] || TIMELINES.prime;
+      const kelvin = cls.timeline === 'kelvin';
       return `<div class="ship-card ${id === this.previewId ? 'sel' : ''} ${owned ? '' : 'locked'}" data-ship="${id}">
         <div class="sc-ico">${cls.icon}</div>
         <div class="sc-meta">
-          <div class="sc-nm">${escapeHtml(cls.name)} ${active ? '<span class="chip green" style="padding:1px 6px;font-size:8px">ACTIVE</span>' : ''}</div>
+          <div class="sc-nm">${escapeHtml(cls.name)} ${active ? '<span class="chip green" style="padding:1px 6px;font-size:8px">ACTIVE</span>' : ''}
+            <span class="chip" title="${tl.name}" style="padding:1px 6px;font-size:8px;color:${tl.color};border-color:${tl.color}55">${kelvin ? 'KELVIN' : 'PRIME'}</span></div>
           <div class="sc-sub">${owned ? escapeHtml(g.state.ships[id].name) : (req.length ? 'Locked · ' + req.join(' · ') : fmtC(g.shipPrice(id)))}</div>
         </div>
         <div class="sc-tier">T${cls.tier}</div>
@@ -265,6 +268,9 @@ export class HangarScene {
         <div class="row between" style="margin-bottom:10px">
           <div><div class="tiny upper faint">${escapeHtml(cls.role)}</div><div style="font-family:var(--font-h);font-size:16px;letter-spacing:.06em">${escapeHtml(cls.name)}</div></div>
           <span class="chip amber">Tier ${cls.tier}</span>
+        </div>
+        <div class="tiny" style="margin:-4px 0 10px;color:${(TIMELINES[cls.timeline] || TIMELINES.prime).color};letter-spacing:.12em;text-transform:uppercase;font-size:9px">
+          ${escapeHtml((TIMELINES[cls.timeline] || TIMELINES.prime).name)}
         </div>
         <div class="stats-grid">
           ${statRow('Hull integrity', s.hull, maxHull, '')}

@@ -896,6 +896,17 @@ function buildKelvinConstitution(b) {
   if (refit) {
     b.torpTube(-0.5, 0.56, 2.05);
     b.torpTube(0.5, 0.56, 2.05);
+    // refit-specific silhouette: aft torpedo pod on a pylon
+    b.mesh(roundedBox(1.5, 0.26, 0.9, 0.08), m.trim, [0, 0.86, -2.9]);
+    b.mesh(roundedBox(0.7, 0.14, 0.5, 0.04), m.hull, [0, 1.02, -2.9]);
+    b.torpTube(-0.42, 0.86, -3.35);
+    b.torpTube(0.42, 0.86, -3.35);
+    // extra saucer rim ring reads as the reinforced hull
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.045, 6, 88), m.trim);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, 0.9, 1.42);
+    ring.scale.z = 1.12;
+    b.group.add(ring);
   }
   b.decalOnSaucer(1.5, 0.19, 0.95, 1.35);
   b.sideDecal(-0.56, 0.3, -1.4, 0.64, -Math.PI / 2);

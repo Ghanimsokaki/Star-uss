@@ -1,6 +1,6 @@
 import { modal, toast, el, $, fmtC } from './dom.js';
 import { modal as _m } from './dom.js';
-import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES } from '../data/ships.js';
+import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, TIMELINES } from '../data/ships.js';
 import { ENEMIES } from '../data/enemies.js';
 import { TECHS, TECH_ORDER, DISTRICTS, CODEX_ARTICLES } from '../data/tech.js';
 import { MISSIONS, RANK_TITLES } from '../data/missions.js';
@@ -24,7 +24,7 @@ export function showCodex(game) {
         const owned = game.state.ownedShips.includes(sid);
         const s = c.specs;
         return `<div class="codex-entry">
-          <div class="row between"><div class="tag">Tier ${c.tier} · ${owned ? 'In service' : 'Not commissioned'}</div>${owned ? '<span class="chip green">Owned</span>' : ''}</div>
+          <div class="row between"><div class="tag">Tier ${c.tier} · ${(TIMELINES[c.timeline] || TIMELINES.prime).name}</div>${owned ? '<span class="chip green">Owned</span>' : ''}</div>
           <h4>${escapeHtml(c.name)} — ${escapeHtml(c.role)}</h4>
           <p>${escapeHtml(c.lore)}</p>
           <p style="margin-top:8px;color:var(--ink-faint)">Length ${s.length} · Beam ${s.beam} · Crew ${s.crew} · Mass ${s.mass} · Max warp ${s.maxWarp} · Decks ${s.decks}</p>

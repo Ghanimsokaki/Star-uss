@@ -43,6 +43,7 @@ export class SystemScene {
     this.hullPlateTimer = 0;
     this.saucerTimer = 0;
     this.speedBoostTimer = 0;
+    this.pointDefenseTimer = 0;
     this.scanCd = 0;
     this.target = null;
     this.reticlePos = { x: 0, y: 0 };
@@ -145,7 +146,7 @@ export class SystemScene {
     this.target = null;
     this.dead = false;
     this.hull = 1; this.shield = 1; this.boost = 1;
-    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0; this.hullPlateTimer = 0; this.saucerTimer = 0; this.speedBoostTimer = 0;
+    this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0; this.hullPlateTimer = 0; this.saucerTimer = 0; this.speedBoostTimer = 0; this.pointDefenseTimer = 0;
     this.projectiles = [];
     this.effects = [];
     this._labelsEl = null;
@@ -580,6 +581,7 @@ export class SystemScene {
     this.hullPlateTimer = Math.max(0, this.hullPlateTimer - dt);
     this.saucerTimer = Math.max(0, this.saucerTimer - dt);
     this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
+    this.pointDefenseTimer = Math.max(0, this.pointDefenseTimer - dt);
     this.scanCd = Math.max(0, this.scanCd - dt);
 
     const autoFire = this.game.state.settings.autoFire;
@@ -632,7 +634,7 @@ export class SystemScene {
 
   _firePhasers() {
     const stats = this.stats;
-    this.fireCd = 1 / (stats.fireRate * (this.abilityTimer > 0 && this.game.shipClass.ability.id === 'overload' ? 2 : 1));
+    this.fireCd = 1 / (stats.fireRate * (this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 2 : 1));
     const target = this.target;
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
     const muzzle = this._muzzleWorld('phaser');
@@ -651,7 +653,7 @@ export class SystemScene {
     this._spawnBeam(muzzle, end, this.game.shipRecord.nacelle || '#59e0ff', hit ? 1 : 0.65);
     audio.phaser(0.2);
     if (hit) {
-      const dmg = stats.phaser * (this.abilityTimer > 0 && this.game.shipClass.ability.id === 'overload' ? 1.5 : 1);
+      const dmg = stats.phaser * (this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 1.5 : 1);
       this._damageEnemy(target, dmg);
       this._impact(end, this.game.shipRecord.nacelle || '#59e0ff');
       this.shake = Math.max(this.shake, 0.18);
@@ -753,6 +755,54 @@ export class SystemScene {
       this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.3);
       this._abilityRing('#c9a6ff', 30);
       this.addLog('Fleet barrage away — hull and shields regenerating', 'good');
+      audio.torpedo(0.5);
+    } else if (ability.id === 'pointDefense') {
+      this.pointDefenseTimer = 5;
+      const bolts = this.projectiles.filter((p) => p.owner === 'enemy');
+      bolts.forEach((p) => this._impact(p.mesh.position.clone(), '#8fd6ff'));
+      this._clearEnemyProjectiles();
+      this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.3);
+      this._abilityRing('#8fd6ff', 18);
+      this.addLog(`Point defence active — ${bolts.length} incoming shot${bolts.length === 1 ? '' : 's'} intercepted`, 'good');
+      audio.confirm();
+    } else if (ability.id === 'reactorOverdrive') {
+      this.abilityTimer = 6;
+      this._abilityRing('#ffd08a', 22);
+      this.addLog('Reactor overdrive — rate of fire doubled for 6s', 'good');
+      audio.upgrade();
+    } else if (ability.id === 'slingshot') {
+      const fwd = V(0, 0, 1).applyQuaternion(this.player.quaternion);
+      this.player.position.addScaledVector(fwd, 520);
+      this.speedBoostTimer = 6;
+      this._warpFlash(this.player.position);
+      this.addLog('Time slingshot — thrown 520 units ahead', 'good');
+      audio.warp();
+    } else if (ability.id === 'refitSpread') {
+      const alive = this._aliveEnemies();
+      for (let i = 0; i < 6; i++) {
+        const muzzle = this._muzzleWorld('torp');
+        const t = alive[i % Math.max(1, alive.length)];
+        const dir = t
+          ? t.group.position.clone().sub(muzzle).normalize()
+          : V(0, 0, 1).applyQuaternion(this.player.quaternion);
+        this._spawnTorpedo(muzzle, dir, this.stats.torp * 0.85, t || null, 'player');
+      }
+      this.addLog('Full spread away — six photons', 'good');
+      audio.torpedo(0.4);
+    } else if (ability.id === 'dreadnoughtBarrage') {
+      const alive = this._aliveEnemies();
+      for (let i = 0; i < 10; i++) {
+        const muzzle = this._muzzleWorld('torp');
+        const t = alive[i % Math.max(1, alive.length)];
+        const dir = t
+          ? t.group.position.clone().sub(muzzle).normalize()
+          : V(0, 0, 1).applyQuaternion(this.player.quaternion);
+        this._spawnTorpedo(muzzle, dir, this.stats.torp * 0.8, t || null, 'player');
+      }
+      this.hull = Math.min(this.maxHull, this.hull + this.maxHull * 0.2);
+      this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.35);
+      this._abilityRing('#ff8a7d', 32);
+      this.addLog('Dreadnought barrage away — reactor dumped to shields', 'good');
       audio.torpedo(0.5);
     } else if (ability.id === 'mva') {
       this.abilityTimer = 8;
@@ -1011,6 +1061,15 @@ export class SystemScene {
       mesh, type: 'bolt', owner: 'enemy', damage,
       vel: dir.clone().normalize().multiplyScalar(200), life: 4.0, radius: 1.0,
     });
+  }
+
+  _clearEnemyProjectiles() {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.owner !== 'enemy') continue;
+      this._removeProjectile(p);
+      this.projectiles.splice(i, 1);
+    }
   }
 
   _removeProjectile(p) {
@@ -1374,6 +1433,13 @@ export class SystemScene {
           }
         }
       } else {
+        // point-defence window shreds incoming bolts before they reach the hull
+        if (this.pointDefenseTimer > 0) {
+          this._impact(p.mesh.position.clone(), '#8fd6ff');
+          this._removeProjectile(p);
+          this.projectiles.splice(i, 1);
+          continue;
+        }
         if (p.mesh.position.distanceTo(this.player.position) < 5.5) {
           this._damagePlayer(p.damage);
           this._impact(p.mesh.position.clone(), '#ff8a6d');
