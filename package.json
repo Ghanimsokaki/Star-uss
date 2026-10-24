@@ -1,0 +1,21 @@
+{
+  "name": "star-trek-ascension",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "STAR TREK: ASCENSION — a 3D starship command game. Explore, fight, build a civilization on Earth, and survive the black hole.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {
+    "three": "^0.186.1",
+    "@fontsource/orbitron": "^5.2.6",
+    "@fontsource/rajdhani": "^5.2.6"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0",
+    "sharp": "^0.34.0"
+  }
+}
