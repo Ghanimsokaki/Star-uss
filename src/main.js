@@ -35,7 +35,24 @@ class App {
     this.viewport.setQuality('medium');
     this.viewport.autoQuality();
     this._bindGlobal();
+    this._bindContextLoss();
     this._bootSequence();
+  }
+
+  _bindContextLoss() {
+    // mobile GPUs reset the context when backgrounded; recover gracefully instead of freezing
+    this.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      try { audio.stopEngine(); audio.stopDrone(); audio.stopMusic?.(); } catch (e) { /* audio may be gone */ }
+      const fatal = document.getElementById('fatal');
+      const msg = document.getElementById('fatal-msg');
+      if (msg) msg.textContent = 'The graphics context was lost (this usually happens after backgrounding a tab for a long time). Your progress is saved.';
+      if (fatal) fatal.hidden = false;
+      game.save(true);
+    }, false);
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      setTimeout(() => window.location.reload(), 400);
+    }, false);
   }
 
   _bootSequence() {
