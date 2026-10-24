@@ -57,6 +57,11 @@ const ALIASES = {
   usskelvin: 'kelvin',
   ncc0514: 'kelvin',
   keldon: 'galaxy',
+  kelvintype: 'kelvin',
+  usskelvinncc0514: 'kelvin',
+  kelvinconstitution: 'kelvinconn',
+  kelvinenterprise: 'kelvinconn',
+  ncc1701kelvin: 'kelvinconn',
 };
 
 // exporters sprinkle separators around ("NCC_1701-A.glb", "ncc 1701 a.glb")

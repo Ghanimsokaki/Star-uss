@@ -1,8 +1,10 @@
 # Bringing your own ships (Meshy → game)
 
-The game renders procedural hulls for all sixteen classes. Any class can be
-replaced by a model you made outside the game — the pipeline below is built for
-**Meshy** exports, but it takes any GLB.
+The game renders procedural hulls for all sixteen classes. **Two already ship
+with a high-detail model** — the Odyssey-class Enterprise-F and the Galaxy-class
+Enterprise-D (see §2). Any of the remaining fourteen can be replaced by a model
+you made outside the game — the pipeline below is built for **Meshy** exports,
+but it takes any GLB.
 
 > The procedural hull never goes away. It is what you see for the first frame,
 > and what you fall back to if a file is missing, corrupt or too heavy for the
@@ -30,7 +32,20 @@ One command if you prefer it manually: `npm run models:scan`.
 
 ---
 
-## 2. Which name for which ship
+## 2. What already ships with a real model
+
+| class | ship | file | notes |
+| --- | --- | --- | --- |
+| `odyssey` | Odyssey-class, Enterprise-F | `odyssey.glb` | 86,607 tris, 11 MB, nods to `"facing": "back"` |
+| `galaxy` | Galaxy-class, Enterprise-D | `galaxy.glb` | 141,178 tris, 5.3 MB, converted from an OBJ |
+
+The other fourteen classes use the procedural hull until you drop a file in.
+Sources and licences for the two imported models are in
+[CREDITS.md](CREDITS.md).
+
+---
+
+## 3. Which name for which ship
 
 The filename *is* the mapping. Save the export as `<classId>.glb`, all
 lower-case:
@@ -53,7 +68,7 @@ never silent.
 
 ---
 
-## 3. Meshy export settings that matter
+## 4. Meshy export settings that matter
 
 | Setting | Use | Why |
 | --- | --- | --- |
@@ -71,7 +86,7 @@ correct at source, model **nose toward +Z, up toward +Y**.
 
 ---
 
-## 4. What the game does to your model
+## 5. What the game does to your model
 
 On load (asynchronously, in the background) the importer:
 
@@ -96,7 +111,7 @@ size. Everything that reads as "the tip of the ship" is recomputed.
 
 ---
 
-## 5. Fine-tuning: `models.config.json`
+## 6. Fine-tuning: `models.config.json`
 
 Only needed when the automatic result is wrong. Create
 `models.config.json` in the repo root; it is read by the scanner and merged into
@@ -133,7 +148,7 @@ import('/src/art/imported.js').then((m) => m.setOverride('sovereign', { facing: 
 
 ---
 
-## 6. Checking a file before you commit it
+## 7. Checking a file before you commit it
 
 ```bash
 npm run models:check -- public/models/akira.glb
@@ -162,7 +177,7 @@ For that, `npm run dev` and look at the hangar.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | symptom | cause | fix |
 | --- | --- | --- |
@@ -181,7 +196,43 @@ values into `models.config.json`.
 
 ---
 
-## 8. Where the code lives
+## 9. Converting an OBJ / FBX / OBJ-style asset
+
+Not everything arrives from Meshy. The two models that ship with the game came
+from GitHub as an OBJ and a GLB, and the OBJ needed the same three steps any
+non-Meshy asset needs — convert, decimate, and (optionally) shrink textures:
+
+```bash
+# OBJ (with .mtl + jpg textures sitting next to it) -> GLB
+npx obj2gltf -i ship.obj -o ship.glb -b
+
+# weld + join draw calls + simplify + shrink textures, no runtime decoder needed
+npx @gltf-transform/cli optimize ship.glb public/models/<classId>.glb \
+  --compress quantize --simplify-error 0.002 \
+  --texture-size 2048 --texture-compress webp
+
+npm run models:check -- public/models/<classId>.glb
+```
+
+Rules that came out of doing it for real:
+
+- **Decimate.** 600k triangles at 44 materials became 141k triangles at 1.36 MB
+  instead of 24 MB — visually identical at play distance, and flyable on a
+  phone.
+- **Join meshes.** 1,366 separate nodes is 1,366 draw calls per ship. After
+  `optimize` it was 24.
+- **Prefer `quantize` over `draco`/`meshopt`** unless you want to wire up a
+  decoder: quantization needs nothing at runtime.
+- **WebP textures** cut the texture payload roughly in half at no visible cost
+  in this game's lighting.
+
+FBX needs one extra hop (`blender --background --python-expr` or any FBX→glTF
+converter) — `obj2gltf` only reads OBJ. If you have the choice, ask the tool
+for glTF/GLB directly.
+
+---
+
+## 10. Where the code lives
 
 | path | role |
 | --- | --- |

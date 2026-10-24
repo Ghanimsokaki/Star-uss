@@ -90,9 +90,10 @@ npm run models:check -- public/models/sovereign.glb   # optional sanity check
 npm run dev                                           # manifest rebuilds, hull loads
 ```
 
-The procedural hull stays as the instant first frame and as the fallback if a
-file is missing or broken. Export as **GLB**, 2K textures, low/medium poly,
-under ~15 MB. Full recipe, all class ids, per-ship orientation tuning and a
+Two hulls already ship as imported models — the Odyssey-class Enterprise-F
+and the Galaxy-class Enterprise-D — and the rest keep their procedural hull as
+the instant first frame and as the fallback if a file is missing or broken.
+Export as **GLB**, 2K textures, low/medium poly, under ~15 MB. Full recipe, all class ids, per-ship orientation tuning and a
 troubleshooting table: **[docs/MODELS.md](docs/MODELS.md)**. Per-ship tweaks
 live in the ready-made `models.config.json`.
 
@@ -106,6 +107,7 @@ vite.config.js           dev server (0.0.0.0), manual chunking
 public/assets/earth/     real Earth day / night / water / topology / cloud JPEGs
 public/models/           your ship GLBs (drop-in) + generated manifest.json
 docs/MODELS.md           Meshy export recipe and the model import pipeline
+docs/CREDITS.md          where the imported models come from, and their licences
 
 src/main.js              App: viewport + input + scene registry, chrome, warp overlay, RAF loop
 src/style.css            LCARS-flavoured glass UI, responsive + touch layouts

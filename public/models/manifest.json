@@ -1,4 +1,14 @@
 {
-  "generatedAt": "2026-10-24T06:13:04.900Z",
-  "models": {}
+  "generatedAt": "2026-10-24T06:27:59.631Z",
+  "models": {
+    "galaxy": {
+      "file": "galaxy.glb",
+      "bytes": 5586392
+    },
+    "odyssey": {
+      "file": "odyssey.glb",
+      "bytes": 11482368,
+      "facing": "back"
+    }
+  }
 }
