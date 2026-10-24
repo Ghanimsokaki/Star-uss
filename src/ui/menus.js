@@ -139,6 +139,20 @@ export function showSettings(app) {
         </div>
       </div>
       <div class="setting-row">
+        <div><div class="nm">Weapons assist</div><div class="ds">Nudge the helm toward your locked target (toggle in flight with V)</div></div>
+        <div class="seg" data-seg="assist">
+          <button data-as="on" class="${g.state.settings.aimAssist !== false ? 'on' : ''}">On</button>
+          <button data-as="off" class="${g.state.settings.aimAssist === false ? 'on' : ''}">Off</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Invert pitch</div><div class="ds">Pull back to climb instead of dive</div></div>
+        <div class="seg" data-seg="invert">
+          <button data-iy="off" class="${!g.state.settings.invertY ? 'on' : ''}">Normal</button>
+          <button data-iy="on" class="${g.state.settings.invertY ? 'on' : ''}">Inverted</button>
+        </div>
+      </div>
+      <div class="setting-row">
         <div><div class="nm">Save game</div><div class="ds">Last saved ${new Date(g.state.lastSave || Date.now()).toLocaleString()}</div></div>
         <button class="btn sm" data-save>Save now</button>
       </div>
@@ -156,6 +170,18 @@ export function showSettings(app) {
     g.state.settings.quality = q;
     app.applyQuality(q);
     g.save();
+  }));
+  elm.querySelectorAll('[data-seg="assist"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="assist"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.aimAssist = b.dataset.as === 'on';
+    g.save();
+    audio.ui();
+  }));
+  elm.querySelectorAll('[data-seg="invert"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="invert"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.invertY = b.dataset.iy === 'on';
+    g.save();
+    audio.ui();
   }));
   elm.querySelectorAll('[data-seg="audio"] button').forEach((b) => b.addEventListener('click', () => {
     elm.querySelectorAll('[data-seg="audio"] button').forEach((x) => x.classList.toggle('on', x === b));

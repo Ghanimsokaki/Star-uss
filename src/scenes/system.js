@@ -414,11 +414,21 @@ export class SystemScene {
           <div class="syslog" id="syslog"></div>
 
           <div class="hud-actions">
-            <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn"><span class="ico">⌖</span><span>SCAN</span></button>
-            <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn"><span class="ico">✷</span><span>ABILITY</span></button>
-            <button class="act-btn boost" data-action="boost" data-hold="1"><span class="ico">»</span><span>BOOST</span></button>
-            <button class="act-btn torp" data-action="torpedo" data-hold="1"><span class="ico">◉</span><span>TORP</span></button>
-            <button class="act-btn fire" data-action="fire" data-hold="1"><span class="ico">✦</span><span>FIRE</span></button>
+            <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system"><span class="ico">✧</span><span>WARP</span><span class="kc">T</span></button>
+            <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact"><span class="ico">⌖</span><span>SCAN</span><span class="kc">R</span></button>
+            <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability"><span class="ico">✷</span><span>ABILITY</span><span class="kc">E</span></button>
+            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost"><span class="ico">»</span><span>BOOST</span><span class="kc">⇧</span></button>
+            <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo"><span class="ico">◉</span><span>TORP</span><span class="kc">F</span></button>
+            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers"><span class="ico">✦</span><span>FIRE</span><span class="kc">SPC</span></button>
+          </div>
+          <div class="control-strip">
+            <span><b>WASD</b> / mouse — steer</span><span class="sep"></span>
+            <span><b>Space</b> fire</span><span class="sep"></span>
+            <span><b>F</b> torpedo</span><span class="sep"></span>
+            <span><b>E</b> ability</span><span class="sep"></span>
+            <span><b>Q</b> target</span><span class="sep"></span>
+            <span><b>T</b> warp</span><span class="sep"></span>
+            <span><b>V</b> switch fire assist</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
           <div class="throttle-ui">
@@ -431,6 +441,12 @@ export class SystemScene {
     document.getElementById('ui').appendChild(this.ui);
     this._labelsEl = $('#obj-labels', this.ui);
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
+    $('#warp-btn', this.ui).onclick = () => {
+      audio.ui();
+      this.addLog('Opening the galaxy map — pick a star and engage warp.', 'good');
+      this.app.setScene('galaxy');
+      toast('Select a star system, then Engage warp', 'good', 3200);
+    };
     const ab = $('#ability-btn', this.ui);
     ab.querySelector('span:last-child').textContent = (ability?.name || 'Ability').split(' ')[0].toUpperCase();
     ab.title = ability?.desc || '';
@@ -479,14 +495,31 @@ export class SystemScene {
     const input = this.app.input;
     input.update(dt);
     if (this.dead) return;
-    const steer = input.steer;
     const stats = this.stats;
-    const turn = stats.turn;
+    const turn = stats.turn * 1.35;          // gentler, more responsive helm
     const up = V(0, 1, 0);
     const right = V(1, 0, 0);
 
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(up, steer.x * turn * 0.85 * dt);
-    const qPitch = new THREE.Quaternion().setFromAxisAngle(right, -steer.y * turn * 0.62 * dt);
+    // --- steering assist: if a target is locked and roughly ahead, drift toward it
+    let assistX = 0, assistY = 0;
+    if (this.target && !this.target.dead && this.game.state.settings.aimAssist !== false) {
+      const toT = this.target.group.position.clone().sub(this.player.position);
+      const dist = toT.length();
+      if (dist > 4) {
+        const local = toT.clone().applyQuaternion(this.player.quaternion.clone().invert()).normalize();
+        const ahead = local.z > 0.35;
+        if (ahead) {
+          assistX = clamp(local.x * 1.6, -1, 1) * 0.42;
+          assistY = clamp(local.y * 1.6, -1, 1) * 0.34;
+        }
+      }
+    }
+    const steerX = clamp(input.steer.x + assistX * (1 - Math.min(1, Math.abs(input.steer.x))), -1, 1);
+    const steerY = clamp(input.steer.y + assistY * (1 - Math.min(1, Math.abs(input.steer.y))), -1, 1);
+
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(up, steerX * turn * 0.9 * dt);
+    const pitchSign = this.game.state.settings.invertY ? 1 : -1;
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitchSign * steerY * turn * 0.68 * dt);
     this.player.quaternion.multiply(qYaw).multiply(qPitch);
     // prevent roll drift
     this.player.quaternion.normalize();
@@ -590,6 +623,19 @@ export class SystemScene {
     if (input.consume('ability')) this._useAbility();
     if (input.consume('scan')) this._scanAction();
     if (input.consume('target')) this._cycleTarget();
+    if (input.consume('warp')) {
+      audio.ui();
+      toast('Select a star system, then Engage warp', 'good', 3000);
+      this.app.setScene('galaxy');
+      return;
+    }
+    if (input.consume('assist')) {
+      const on = this.game.state.settings.aimAssist === false;
+      this.game.state.settings.aimAssist = on;
+      this.game.save();
+      this.addLog(`Weapons assist ${on ? 'engaged' : 'disengaged'}`, 'good');
+      toast(`Weapons assist ${on ? 'ON' : 'OFF'}`, on ? 'good' : 'warn', 1600);
+    }
 
     this._updateTargeting();
     this._updateScanPrompt();

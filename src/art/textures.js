@@ -45,22 +45,26 @@ export function fbm(x, y, seed = 1, oct = 4) {
 
 /* ---------------------------------------------------------------- hull */
 /** Starfleet hull plating: albedo + bump + roughness + window lights. */
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
 export function hullTextures(paletteId = 'starfleet', detail = 1) {
   const key = `hull:${paletteId}:${detail}`;
   if (cache.has(key)) return cache.get(key);
-  const size = detail > 0.7 ? 768 : 512;
+  const size = detail > 0.7 ? 1024 : 512;
   const base = {
-    starfleet: ['#b9c3cf', '#8e9aa8'],
-    refit: ['#e8eef5', '#b7c2cd'],
-    terran: ['#333a45', '#1b2028'],
-    andorian: ['#93b6cf', '#6f93ac'],
-    vulcan: ['#a0937f', '#7a6f5e'],
-    section31: ['#242a33', '#141a21'],
-  }[paletteId] || ['#b9c3cf', '#8e9aa8'];
+    starfleet: ['#c2ccd8', '#94a1b0'],
+    refit: ['#eef3f8', '#c3ccd6'],
+    terran: ['#39404c', '#1e242c'],
+    andorian: ['#9cbfd8', '#7498b2'],
+    vulcan: ['#a89b86', '#7f7462'],
+    section31: ['#282f39', '#171d24'],
+  }[paletteId] || ['#c2ccd8', '#94a1b0'];
 
   const c = canvas(size, size);
   const g = c.getContext('2d');
   g.fillStyle = base[0]; g.fillRect(0, 0, size, size);
+
+  // ---- base plating: layered fbm gives a brushed, slightly weathered alloy
   const img = g.getImageData(0, 0, size, size);
   const d = img.data;
   const [r1, g1, b1] = hexToRgb(base[0]);
@@ -68,9 +72,9 @@ export function hullTextures(paletteId = 'starfleet', detail = 1) {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const i = (y * size + x) * 4;
-      const n = fbm(x / 64, y / 64, 7, 4);
-      const grime = fbm(x / 20, y / 20, 31, 3) * 0.16;
-      const t = n * 0.55 + grime;
+      const n = fbm(x / 150, y / 150, 7, 4) * 0.5 + fbm(x / 34, y / 34, 19, 3) * 0.34;
+      const grime = fbm(x / 12, y / 12, 31, 2) * 0.09;
+      const t = clamp01(n * 0.6 + grime);
       d[i] = r1 * (1 - t) + r2 * t;
       d[i + 1] = g1 * (1 - t) + g2 * t;
       d[i + 2] = b1 * (1 - t) + b2 * t;
@@ -79,66 +83,145 @@ export function hullTextures(paletteId = 'starfleet', detail = 1) {
   }
   g.putImageData(img, 0, 0);
 
-  // panel lines
-  g.lineWidth = 1;
-  const panels = 18;
-  for (let i = 0; i <= panels; i++) {
-    const p = (i / panels) * size;
-    g.strokeStyle = 'rgba(20,30,42,0.30)';
-    g.beginPath(); g.moveTo(p, 0); g.lineTo(p, size); g.stroke();
-    g.beginPath(); g.moveTo(0, p); g.lineTo(size, p); g.stroke();
-    if (i % 3 === 0) {
-      g.strokeStyle = 'rgba(255,255,255,0.16)';
-      g.beginPath(); g.moveTo(p + 1, 0); g.lineTo(p + 1, size); g.stroke();
-      g.beginPath(); g.moveTo(0, p + 1); g.lineTo(size, p + 1); g.stroke();
+  // ---- hull plating: staggered rectangles with bevel highlights, like a real starship skin
+  const plateRows = 16;
+  const rowH = size / plateRows;
+  for (let row = 0; row < plateRows; row++) {
+    let x = -Math.random() * 90;
+    while (x < size) {
+      const w = 60 + Math.random() * 140;
+      const y = row * rowH;
+      const shade = Math.random();
+      g.fillStyle = shade > 0.5
+        ? `rgba(255,255,255,${0.02 + Math.random() * 0.05})`
+        : `rgba(18,26,38,${0.02 + Math.random() * 0.06})`;
+      g.fillRect(x, y, w, rowH);
+      // seam lines: dark inside, light bevel above
+      g.strokeStyle = 'rgba(10,16,26,0.34)';
+      g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, w, rowH);
+      g.strokeStyle = 'rgba(255,255,255,0.13)';
+      g.beginPath(); g.moveTo(x + 1, y + 1.5); g.lineTo(x + w, y + 1.5); g.stroke();
+      x += w;
     }
   }
-  // hull plate variations
-  for (let i = 0; i < 46; i++) {
-    const w = 20 + Math.random() * 110;
-    const h = 14 + Math.random() * 80;
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    g.fillStyle = `rgba(${Math.random() > 0.5 ? '255,255,255' : '20,28,40'},${0.02 + Math.random() * 0.05})`;
-    g.fillRect(x, y, w, h);
-    g.strokeStyle = 'rgba(15,22,32,0.24)';
-    g.strokeRect(x + 0.5, y + 0.5, w, h);
+
+  // ---- longitudinal seams and a few larger structural bands
+  g.strokeStyle = 'rgba(8,14,22,0.5)';
+  g.lineWidth = 2;
+  for (let i = 0; i < 7; i++) {
+    const x = (i / 7) * size + Math.random() * 8;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, size); g.stroke();
   }
-  // tiny greebles
-  for (let i = 0; i < 240; i++) {
-    const x = Math.random() * size, y = Math.random() * size;
-    g.fillStyle = `rgba(10,16,24,${0.1 + Math.random() * 0.25})`;
-    g.fillRect(x, y, 2 + Math.random() * 7, 1 + Math.random() * 4);
+  g.strokeStyle = 'rgba(8,14,22,0.34)';
+  g.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    const x = Math.random() * size;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() - 0.5) * 90, size); g.stroke();
   }
 
-  // window lights (emissive map)
+  // ---- micro detail: fasteners, hatches, vents
+  for (let i = 0; i < 520; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    g.fillStyle = `rgba(12,18,26,${0.08 + Math.random() * 0.22})`;
+    g.fillRect(x, y, 1.5 + Math.random() * 5, 1 + Math.random() * 2.4);
+  }
+  for (let i = 0; i < 44; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const w = 10 + Math.random() * 30, h = 6 + Math.random() * 16;
+    g.fillStyle = 'rgba(16,24,34,0.22)';
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = 'rgba(255,255,255,0.12)';
+    g.strokeRect(x + 0.5, y + 0.5, w, h);
+    // vent slats
+    g.fillStyle = 'rgba(8,12,18,0.3)';
+    for (let k = 1; k < 5; k++) g.fillRect(x + 2, y + (h / 5) * k, w - 4, 1);
+  }
+
+  // ---- registry / hull stripes (faint, uniform-accurate)
+  g.fillStyle = 'rgba(196,84,64,0.22)';
+  g.fillRect(0, size * 0.46, size, 3);
+  g.fillStyle = 'rgba(90,150,190,0.16)';
+  g.fillRect(0, size * 0.478, size, 2);
+
+  // ---- window lights (emissive map): rows of lit windows with occasional dark ones
   const e = canvas(size, size);
   const ge = e.getContext('2d');
   ge.fillStyle = '#000'; ge.fillRect(0, 0, size, size);
-  for (let row = 0; row < 26; row++) {
-    const y = 20 + row * (size / 27);
-    for (let col = 0; col < 40; col++) {
-      if (Math.random() > 0.55) continue;
-      const x = 14 + col * (size / 41) + Math.random() * 3;
-      const lit = Math.random() > 0.25;
-      ge.fillStyle = lit ? `rgba(255,${200 + Math.random() * 40},${140 + Math.random() * 60},${0.5 + Math.random() * 0.5})` : 'rgba(90,120,150,0.25)';
-      ge.fillRect(x, y, 3 + Math.random() * 2, 1.4);
+  const rows = 30, cols = 46;
+  for (let row = 0; row < rows; row++) {
+    const y = 18 + row * (size / (rows + 2));
+    for (let col = 0; col < cols; col++) {
+      if (Math.random() > 0.5) continue;
+      const x = 12 + col * (size / (cols + 2)) + Math.random() * 2;
+      const lit = Math.random() > 0.22;
+      ge.fillStyle = lit
+        ? `rgba(255,${205 + Math.random() * 35 | 0},${150 + Math.random() * 60 | 0},${0.55 + Math.random() * 0.45})`
+        : 'rgba(70,100,130,0.22)';
+      ge.fillRect(x, y, 3 + Math.random() * 2.5, 1.3);
     }
   }
+  // a couple of big windows on the saucer rim
+  ge.fillStyle = 'rgba(150,220,255,0.75)';
+  for (let i = 0; i < 10; i++) ge.fillRect(Math.random() * size, size * 0.2 + Math.random() * 24, 9, 2);
+
+  // ---- roughness / bump: mid rough metal with smooth plate tops and scuffed patches
   const rough = canvas(size, size);
   const gr = rough.getContext('2d');
-  gr.fillStyle = '#8c8c8c'; gr.fillRect(0, 0, size, size);
-  for (let i = 0; i < 200; i++) {
-    gr.fillStyle = `rgba(${Math.random() > 0.5 ? '255,255,255' : '40,40,40'},${0.05 + Math.random() * 0.15})`;
-    gr.fillRect(Math.random() * size, Math.random() * size, 30 + Math.random() * 120, 20 + Math.random() * 90);
+  gr.fillStyle = '#7a7a7a'; gr.fillRect(0, 0, size, size);
+  for (let i = 0; i < 260; i++) {
+    const v = Math.random() > 0.5 ? '255,255,255' : '30,30,30';
+    gr.fillStyle = `rgba(${v},${0.04 + Math.random() * 0.14})`;
+    gr.fillRect(Math.random() * size, Math.random() * size, 40 + Math.random() * 160, 24 + Math.random() * 110);
   }
+  // repaint seams slightly rougher so the bump catches them
+  gr.strokeStyle = 'rgba(20,20,20,0.30)';
+  gr.lineWidth = 1.4;
+  for (let row = 0; row <= plateRows; row++) {
+    const y = row * rowH;
+    gr.beginPath(); gr.moveTo(0, y); gr.lineTo(size, y); gr.stroke();
+  }
+
+  // ---- normal map derived from the same seam pattern (gives real panel relief)
+  const normalSrc = canvas(size, size);
+  const gn = normalSrc.getContext('2d');
+  gn.fillStyle = '#8080ff'; gn.fillRect(0, 0, size, size);
+  const nimg = gn.getImageData(0, 0, size, size);
+  const nd = nimg.data;
+  const height = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const seamX = Math.abs((x % (size / 7)) - 0) < 3 ? 1 : 0;
+      const seamY = Math.abs((y % rowH)) < 2 ? 1 : 0;
+      height[y * size + x] = fbm(x / 26, y / 26, 5, 3) * 0.55 + (seamX || seamY ? 0.6 : 0);
+    }
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const xl = height[y * size + Math.max(0, x - 1)];
+      const xr = height[y * size + Math.min(size - 1, x + 1)];
+      const yu = height[Math.max(0, y - 1) * size + x];
+      const yd = height[Math.min(size - 1, y + 1) * size + x];
+      const nx = (xl - xr) * 2.2;
+      const ny = (yu - yd) * 2.2;
+      const nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nd[i] = ((nx / len) * 0.5 + 0.5) * 255;
+      nd[i + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      nd[i + 2] = ((nz / len) * 0.5 + 0.5) * 255;
+      nd[i + 3] = 255;
+    }
+  }
+  gn.putImageData(nimg, 0, 0);
 
   const roughnessTex = toTex(rough, { repeat: 2, aniso: 8 });
   const out = {
-    map: toTex(c, { srgb: true, repeat: 2, aniso: 8 }),
-    emissiveMap: toTex(e, { repeat: 2, aniso: 8 }),
+    map: toTex(c, { srgb: true, repeat: 2, aniso: 16 }),
+    emissiveMap: toTex(e, { srgb: true, repeat: 2, aniso: 8 }),
     roughnessMap: roughnessTex,
     bumpMap: roughnessTex,
+    normalMap: toTex(normalSrc, { repeat: 2, aniso: 8 }),
   };
   cache.set(key, out);
   return out;
@@ -408,6 +491,7 @@ export function cloudTexture(seed = 3, detail = 1) {
 }
 
 /* ---------------------------------------------------------------- decals */
+
 export function registryTexture(name, registry, accent = '#20262e') {
   const key = `registry:${name}:${registry}:${accent}`;
   if (cache.has(key)) return cache.get(key);

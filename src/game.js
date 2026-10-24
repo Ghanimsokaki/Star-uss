@@ -55,7 +55,7 @@ export function newGameState(seed = 'alpha') {
     techs: [],
     missionsDone: [],
     stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
-    settings: { quality: 'auto', muted: false, autoFire: false },
+    settings: { quality: 'auto', muted: false, autoFire: true, aimAssist: true, invertY: false },
     flags: { blackholeEntered: false, bossDefeated: false, introSeen: false, capitalPlaced: true },
     log: [],
   };

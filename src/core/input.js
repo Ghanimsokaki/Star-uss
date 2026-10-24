@@ -29,12 +29,14 @@ export class Input {
       const k = e.key.toLowerCase();
       this.keys.add(k);
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-      if (k === ' ') this._press('fire');
+      if (k === ' ') { this._press('fire'); this.actions.fire = true; }
       if (k === 'f' || k === 'shift') this._press(k === 'shift' ? 'boost' : 'torpedo');
-      if (k === 'e') this._press('ability');
+      if (k === 'e' || k === '1') this._press('ability');
       if (k === 'r') this._press('scan');
       if (k === 'q' || k === 'tab') this._press('target');
       if (k === 'x') this._press('brake');
+      if (k === 't') this._press('warp');
+      if (k === 'v') this._press('assist');
     });
     window.addEventListener('keyup', (e) => {
       if (isTyping(e)) return;
@@ -176,16 +178,15 @@ export class Input {
       mx = this.stick.x;
       my = this.stick.y;
     } else if (this.mouseActive && this.mouseIdle < 2.4) {
-      // small dead zone in the middle, full authority at the edges
-      mx = Math.abs(this.ndc.x) < 0.08 ? 0 : this.ndc.x;
-      my = Math.abs(this.ndc.y) < 0.08 ? 0 : this.ndc.y;
-      mx = Math.sign(mx) * Math.pow(Math.abs(mx), 1.35);
-      my = Math.sign(my) * Math.pow(Math.abs(my), 1.35);
+      // generous dead zone in the middle, exponential authority toward the edges
+      const dz = (v) => (Math.abs(v) < 0.14 ? 0 : (Math.abs(v) - 0.14) / 0.86);
+      mx = Math.sign(this.ndc.x) * Math.pow(dz(this.ndc.x), 1.6);
+      my = Math.sign(this.ndc.y) * Math.pow(dz(this.ndc.y), 1.6);
     }
     this.rawSteer.x = clamp(kx + mx, -1, 1);
     this.rawSteer.y = clamp(ky + my, -1, 1);
     // smooth steering so it feels like mass
-    const s = 1 - Math.exp(-9 * dt);
+    const s = 1 - Math.exp(-13 * dt);
     this.steer.x += (this.rawSteer.x - this.steer.x) * s;
     this.steer.y += (this.rawSteer.y - this.steer.y) * s;
 

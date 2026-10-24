@@ -109,26 +109,34 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const nacelleColor = record.nacelle || palette.accent;
   const deflectorColor = record.deflector || '#5ab7ff';
 
-  const hull = new THREE.MeshStandardMaterial({
+  const hull = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(palette.hull),
     map: tex.map,
     roughnessMap: tex.roughnessMap,
+    normalMap: tex.normalMap,
+    normalScale: new THREE.Vector2(0.55, 0.55),
     bumpMap: tex.bumpMap,
-    bumpScale: 0.018,
+    bumpScale: 0.022,
     emissive: new THREE.Color(0xffd9a0),
     emissiveMap: tex.emissiveMap,
-    emissiveIntensity: 0.75,
-    metalness: 0.62,
-    roughness: 0.46,
-    envMapIntensity: 1.15,
+    emissiveIntensity: 0.85,
+    metalness: 0.72,
+    roughness: 0.44,
+    envMapIntensity: 1.35,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.42,
   });
-  const trim = new THREE.MeshStandardMaterial({
+  const trim = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(palette.trim),
     map: tex.map,
     roughnessMap: tex.roughnessMap,
-    metalness: 0.78,
-    roughness: 0.38,
-    envMapIntensity: 1.2,
+    normalMap: tex.normalMap,
+    normalScale: new THREE.Vector2(0.4, 0.4),
+    metalness: 0.85,
+    roughness: 0.34,
+    envMapIntensity: 1.45,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.3,
   });
   const dark = new THREE.MeshStandardMaterial({
     color: new THREE.Color(palette.dark || '#20262e'),
@@ -406,7 +414,40 @@ class ShipBuilder {
     return m;
   }
 
+  /** Navigation lights: red port, green starboard, white strobes plus window glow. */
+  navLights(span, len, y) {
+    if (!this.detail) return;
+    const mk = (color, pos, size = 0.075) => {
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
+      bulb.position.set(...pos);
+      this.group.add(bulb);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture(color), color: new THREE.Color(color), transparent: true,
+        opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+      }));
+      halo.position.set(...pos);
+      halo.scale.setScalar(size * 9);
+      this.group.add(halo);
+      return bulb;
+    };
+    // port (red) / starboard (green) on the widest points of the saucer
+    mk('#ff5a4a', [-span, y, len * 0.28], 0.075);
+    mk('#5aff9a', [span, y, len * 0.28], 0.075);
+    // white strobes fore and aft
+    mk('#eaf6ff', [0, y, len * 0.52], 0.06);
+    mk('#eaf6ff', [0, y * 0.7, -len * 0.46], 0.055);
+  }
+
   finish(extra = {}) {
+    // every hull gets navigation lights and a lit rim, sized from its own bounds
+    this.group.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(this.group);
+    if (bounds.isEmpty()) {
+      this.navLights(1.4, 4, 0.8);
+    } else {
+      const size = new THREE.Vector3(); bounds.getSize(size);
+      this.navLights(size.x * 0.44, size.z, bounds.max.y - size.y * 0.28);
+    }
     this.group.userData = {
       cls: this.cls,
       phaserMuzzles: this.phaserMuzzles,
