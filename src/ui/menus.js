@@ -150,7 +150,7 @@ export function showSettings(app) {
         </div>
       </div>
       <div class="setting-row">
-        <div><div class="nm">Auto-fire phasers</div><div class="ds">Keep firing while a target is in arc (mobile-friendly)</div></div>
+        <div><div class="nm">Auto-fire phasers</div><div class="ds">Fire continuously without pulling the trigger — off, so the ship only shoots when you do</div></div>
         <div class="seg" data-seg="auto">
           <button data-f="on" class="${g.state.settings.autoFire ? 'on' : ''}">On</button>
           <button data-f="off" class="${!g.state.settings.autoFire ? 'on' : ''}">Off</button>

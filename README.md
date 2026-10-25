@@ -13,6 +13,7 @@ npm install
 npm run dev        # http://localhost:5173  (binds 0.0.0.0, works on phones)
 npm run build      # production bundle in dist/
 npm run preview    # serve the built bundle on :4173
+npm test           # helm direction, weapon defaults, deploy config
 ```
 
 Requires WebGL 2 and hardware acceleration. On first load the game shows a boot sequence, then the title screen.
@@ -43,6 +44,9 @@ on the fly too.
 The helm is fly-by-wire: steering is smoothed, the mouse has a generous centre dead zone, and **weapons assist**
 gently pulls you toward your locked target (toggle with `V` or in Settings, along with pitch inversion). On touch,
 assist is 35% stronger because a thumb is less precise than a mouse.
+
+**Weapons are manual.** `D` and the cursor both turn the ship the way you point them, and phasers only fire while
+you hold the trigger — the old hands-free *Auto-fire* mode is off by default and lives in Settings if you want it back.
 
 ---
 
@@ -118,11 +122,13 @@ public/assets/earth/     real Earth day / night / water / topology / cloud JPEGs
 public/models/           your ship GLBs (drop-in) + generated manifest.json
 docs/MODELS.md           Meshy export recipe and the model import pipeline
 docs/CREDITS.md          where the imported models come from, and their licences
+vercel.json              static deploy config (build command, output dir, cache headers)
+tests/                   node:test suites for helm direction and the deploy contract
 
 src/main.js              App: viewport + input + scene registry, chrome, warp overlay, RAF loop
 src/style.css            LCARS-flavoured glass UI, responsive + touch layouts
 src/game.js              Game state machine: economy, ships, research, travel, missions, save/load
-src/core/                util, device detection, input (mouse/keyboard/touch/gamepad), audio, Viewport
+src/core/                util, device detection, input (mouse/keyboard/touch/gamepad), helm maths, audio, Viewport
 src/data/                ships, enemies, galaxy, tech/districts/codex, missions/ranks
 src/art/                 procedural textures, ship & enemy builders, environment, Earth, black hole
 src/ui/                  DOM toolkit + menus (codex, handbook, settings, mission log, rank-up)
@@ -139,6 +145,40 @@ src/scenes/              title, earth, hangar, galaxy, system (flight & combat)
   hardware tier. Nothing else sniffs the user agent. `viewport.js` takes its preset from it, `input.js` takes
   its scheme, and the body classes drive the responsive HUD.
 - Ship models are a build-time manifest, not a hard dependency: `src/art/imported.js` fetches `public/models/manifest.json`, hot-swaps a GLB in when it exists, and leaves the procedural hull in place otherwise. The scanner (`scripts/scan-models.mjs`) runs before `dev`/`build` and watches the folder while the dev server is up.
+
+---
+
+## Deploy to Vercel
+
+The game is a fully static Vite build — no server, no database, no environment
+variables — so Vercel hosts it as-is.
+
+**From the dashboard:** import the repository, leave the framework preset on
+**Vite**, and deploy. `vercel.json` already pins the build command
+(`npm run build`), the output directory (`dist`) and the cache headers, so there
+is nothing to fill in.
+
+**From the CLI:**
+
+```bash
+npm i -g vercel
+vercel          # preview deployment
+vercel --prod   # production
+```
+
+What the config takes care of:
+
+- `npm run build` regenerates `public/models/manifest.json` before bundling, so
+  any hull you drop into `public/models/` is picked up on the next deploy.
+- `/models/*` is served with `must-revalidate` instead of an immutable cache —
+  swapping a `.glb` shows up immediately instead of hiding behind a year-long
+  edge cache.
+- `/assets/*` (hashed filenames) is cached immutably.
+- There is no catch-all rewrite on purpose: the game is one page, and a blanket
+  `/(.*) → /index.html` would shadow the 19 MB of models.
+
+Nothing else is needed — the game writes saves to `localStorage`, so there is no
+backend to connect.
 
 ---
 

@@ -5,7 +5,7 @@ import { MISSIONS, RANK_TITLES, rankFor, nextRankXp } from './data/missions.js';
 import { storage, uid, clamp } from './core/util.js';
 
 const SAVE_KEY = 'startrek.ascension.save.v1';
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 
 function defaultLevels() {
   return { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 };
@@ -55,7 +55,9 @@ export function newGameState(seed = 'alpha') {
     techs: [],
     missionsDone: [],
     stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
-    settings: { quality: 'auto', muted: false, autoFire: true, aimAssist: true, invertY: false, controls: 'auto' },
+    // autoFire is OFF: the weapons are the player's to pull. It stays a settings
+    // toggle for anyone who wants the old hands-free behaviour.
+    settings: { quality: 'auto', muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto' },
     flags: { blackholeEntered: false, bossDefeated: false, introSeen: false, capitalPlaced: true },
     log: [],
   };
@@ -96,8 +98,13 @@ export class Game {
   load() {
     const s = storage.get(SAVE_KEY);
     if (!s) return false;
+    const savedVersion = Number(s.version) || 1;
     const fresh = newGameState(s.seed || 'alpha');
     this.state = { ...fresh, ...s, stats: { ...fresh.stats, ...(s.stats || {}) }, settings: { ...fresh.settings, ...(s.settings || {}) }, flags: { ...fresh.flags, ...(s.flags || {}) }, civ: { ...fresh.civ, ...(s.civ || {}) } };
+    // v4: phasers used to fire hands-free by default, which read as the ship
+    // shooting on its own. One-time migration — an explicit "On" afterwards sticks.
+    if (savedVersion < 4) this.state.settings.autoFire = false;
+    this.state.version = SAVE_VERSION;
     // guarantee a capital exists
     if (!this.state.civ.districts?.length) this.state.civ.districts = fresh.civ.districts;
     if (!this.state.ships || !Object.keys(this.state.ships).length) {

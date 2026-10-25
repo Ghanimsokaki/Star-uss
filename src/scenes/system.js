@@ -11,6 +11,7 @@ import { PLANET_TYPES as PT, STAR_LABEL } from '../data/galaxy.js';
 import { audio } from '../core/audio.js';
 import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
+import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
@@ -559,8 +560,6 @@ export class SystemScene {
     if (this.dead) return;
     const stats = this.stats;
     const turn = stats.turn * 1.35;          // gentler, more responsive helm
-    const up = V(0, 1, 0);
-    const right = V(1, 0, 0);
 
     // --- steering assist: if a target is locked and roughly ahead, drift toward it
     let assistX = 0, assistY = 0;
@@ -573,20 +572,20 @@ export class SystemScene {
         if (ahead) {
           // thumbs are less precise than a mouse, so the helm helps a little more
           const strength = isTouchScheme() ? 1.35 : 1;
-          assistX = clamp(local.x * 1.6, -1, 1) * 0.42 * strength;
-          assistY = clamp(local.y * 1.6, -1, 1) * 0.34 * strength;
+          const a = assistFor(local, { strength });
+          assistX = a.x; assistY = a.y;
         }
       }
     }
     const steerX = clamp(input.steer.x + assistX * (1 - Math.min(1, Math.abs(input.steer.x))), -1, 1);
     const steerY = clamp(input.steer.y + assistY * (1 - Math.min(1, Math.abs(input.steer.y))), -1, 1);
 
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(up, steerX * turn * 0.9 * dt);
-    const pitchSign = this.game.state.settings.invertY ? 1 : -1;
-    const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitchSign * steerY * turn * 0.68 * dt);
-    this.player.quaternion.multiply(qYaw).multiply(qPitch);
-    // prevent roll drift
-    this.player.quaternion.normalize();
+    // steer.x = +1 is starboard; core/helm.js owns the yaw sign (and normalises)
+    applyHelm(this.player.quaternion, { x: steerX, y: steerY }, {
+      turn,
+      dt,
+      invertY: this.game.state.settings.invertY === true,
+    });
 
     // --- impulse throttle: hold Z / the ▲ pad, or C / ▼. X is all-stop.
     if (input.throttleRate) {
@@ -652,7 +651,7 @@ export class SystemScene {
     }
 
     // player visual roll
-    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, -steerX * 0.45, 4, dt);
+    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, bankFor(steerX), 4, dt);
     if (this.player.children[0]) this.player.children[0].rotation.z = modelRoll;
 
     // engine glow pulsing
