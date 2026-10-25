@@ -50,6 +50,8 @@ Sources and licences for the three imported models are in
 > in hand. It is the one imported hull here that does not come from a fan
 > recreation of a specific canon design; if you have a real Saber mesh, drop it
 > over `public/models/saber.glb` and nothing else needs to change.
+>
+> ![the imported Saber hull, three-quarter and top views](images/saber-hull.png)
 
 ---
 
