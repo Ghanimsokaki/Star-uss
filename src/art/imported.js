@@ -229,6 +229,34 @@ export function attachModel(shipGroup, importedRoot, targetLength) {
   return true;
 }
 
+/**
+ * Repaint an imported hull in the player's palette.
+ *
+ * Only models without a baked albedo texture are recoloured: tinting a
+ * photoreal fan mesh (galaxy, odyssey) would flatten its painted plating, but a
+ * geometry-only export is meant to be painted by the game. Returns how many
+ * materials were repainted.
+ */
+export function applyLivery(root, livery) {
+  if (!root || !livery) return 0;
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m || m.map || m.baseColorMap) continue; // baked albedo wins
+      if (!m.color) continue;
+      m.color.set(livery.hull);
+      // no texture means no roughness map either — keep it a painted hull, not chrome
+      if (typeof m.metalness === 'number' && m.metalness > 0.5) m.metalness = 0.35;
+      if (typeof m.roughness === 'number' && m.roughness < 0.3) m.roughness = 0.42;
+      m.needsUpdate = true;
+      n++;
+    }
+  });
+  return n;
+}
+
 /** Show the procedural skin again (used when a model fails to load). */
 export function detachModel(shipGroup) {
   if (!shipGroup || !shipGroup.userData.importedApplied) return false;
@@ -272,6 +300,8 @@ export async function tryApplyModel(shipGroup, classId, cls) {
     scale: (entry.scale || 1) * (o.scale || 1),
     yOffset: o.yOffset ?? entry.yOffset ?? 0,
   });
+  // keep the owner's livery: a model with no baked albedo gets the palette colour
+  applyLivery(root, shipGroup.userData.livery);
   const ok = attachModel(shipGroup, root, targetLength);
   if (ok) emit(classId, true, { url });
   return ok;

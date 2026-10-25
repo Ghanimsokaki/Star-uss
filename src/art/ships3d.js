@@ -1279,6 +1279,9 @@ export function buildShip(classId, record = {}, quality = 1, opts = {}) {
   group.name = `ship-${cls.id}`;
   group.userData.classId = cls.id;
   group.userData.length = group.userData.length || 6;
+  // imported models read these to stay on-livery with the procedural hull
+  const livery = PALETTES.find((p) => p.id === record.palette) || PALETTES[0];
+  group.userData.livery = { hull: livery.hull, trim: livery.trim, accent: record.nacelle || livery.accent };
 
   // If a Meshy / GLB model exists for this class, hot-swap it in asynchronously.
   // The procedural hull renders until the file is parsed, and stays as a

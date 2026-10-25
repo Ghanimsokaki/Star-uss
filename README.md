@@ -99,9 +99,10 @@ npm run models:check -- public/models/sovereign.glb   # optional sanity check
 npm run dev                                           # manifest rebuilds, hull loads
 ```
 
-Two hulls already ship as imported models — the Odyssey-class Enterprise-F
-and the Galaxy-class Enterprise-D — and the rest keep their procedural hull as
-the instant first frame and as the fallback if a file is missing or broken.
+Three hulls already ship as imported models — the Odyssey-class Enterprise-F,
+the Galaxy-class Enterprise-D and the Saber-class frigate — and the rest keep
+their procedural hull as the instant first frame and as the fallback if a file
+is missing or broken.
 Export as **GLB**, 2K textures, low/medium poly, under ~15 MB. Full recipe, all class ids, per-ship orientation tuning and a
 troubleshooting table: **[docs/MODELS.md](docs/MODELS.md)**. Per-ship tweaks
 live in the ready-made `models.config.json`.

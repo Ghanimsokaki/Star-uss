@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildShip, disposeObject3D, makeShipMaterials, saucerGeometry, roundedBox, bodyLathe } from '../art/ships3d.js';
+import { onModelLoaded } from '../art/imported.js';
 import { buildEnemy, shieldBubble } from '../art/enemies3d.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
@@ -120,6 +121,8 @@ export class SystemScene {
     this._teardown();
     this._schemeOff?.();
     this._schemeOff = null;
+    this._modelOff?.();
+    this._modelOff = null;
     clearTimeout(this._hintTimer);
     this.ui?.remove();
     this.ui = null;
@@ -347,9 +350,25 @@ export class SystemScene {
       this.player.add(s);
       return s;
     });
+    // a GLB hull lands a frame or two later: move the glow onto its real nacelles
+    this._modelOff?.();
+    this._modelOff = onModelLoaded((classId, ok) => {
+      if (!ok || classId !== this.player?.userData.classId) return;
+      this._alignEngineSprites();
+    });
     this.camDist = Math.max(18, (this.player.userData.length || 6) * 2.6);
     this.camera.position.copy(this.player.position).add(V(0, 6, -this.camDist));
     this.camera.lookAt(this.player.position);
+  }
+
+  /** Put the engine glow sprites at the current hull's thruster anchors. */
+  _alignEngineSprites() {
+    const thrusters = this.player?.userData.thrusters || [];
+    if (!thrusters.length || !this.engineSprites) return;
+    this.engineSprites.forEach((s, i) => {
+      const t = thrusters[i] || thrusters[thrusters.length - 1];
+      if (t?.pos) s.position.copy(t.pos);
+    });
   }
 
   /* ================================================================ enemies */

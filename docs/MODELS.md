@@ -38,10 +38,18 @@ One command if you prefer it manually: `npm run models:scan`.
 | --- | --- | --- | --- |
 | `odyssey` | Odyssey-class, Enterprise-F | `odyssey.glb` | 86,607 tris, 11 MB, needs `"facing": "back"` |
 | `galaxy` | Galaxy-class, Enterprise-D | `galaxy.glb` | 141,178 tris, 5.3 MB, converted from an OBJ |
+| `saber` | Saber-class frigate *(AI stand-in)* | `saber.glb` | 49,662 tris, 2.54 MB, converted from an FBX, needs `"facing": "back"` |
 
-The other twenty classes use the procedural hull until you drop a file in.
-Sources and licences for the two imported models are in
+The other nineteen classes use the procedural hull until you drop a file in.
+Sources and licences for the three imported models are in
 [CREDITS.md](CREDITS.md).
+
+> The Saber model is **not** a canon-accurate mesh. It is a generic starship
+> generated with Tripo AI, kept because its silhouette — saucer forward, compact
+> engineering hull, twin nacelles aft — is the closest thing to a Saber we have
+> in hand. It is the one imported hull here that does not come from a fan
+> recreation of a specific canon design; if you have a real Saber mesh, drop it
+> over `public/models/saber.glb` and nothing else needs to change.
 
 ---
 

@@ -1,7 +1,7 @@
 # Third-party models, textures and sources
 
-The game ships two high-detail ship models taken from public GitHub
-repositories. They are fan-made recreations of Star Trek designs: the
+The game ships three high-detail ship models: two taken from public GitHub
+repositories and one AI-generated mesh uploaded to this repository. They are fan-made recreations of Star Trek designs: the
 underlying starship designs are the property of CBS Studios / Paramount, and
 these files are used here for a non-commercial fan project. If you fork this
 for anything commercial, replace them.
@@ -47,6 +47,34 @@ npx @gltf-transform/cli optimize entd.glb public/models/galaxy.glb \
 `--compress quantize` is deliberate: Draco and meshopt would need a decoder at
 runtime, and quantization (`KHR_mesh_quantization`) is supported by three.js
 without one.
+
+## `public/models/saber.glb`
+
+- **Ship:** Saber-class frigate — U.S.S. Yeager (NCC-61947), tier 3. **The mesh
+  is not canon-accurate.** It is a generic starship generated with
+  [Tripo AI](https://www.tripo3d.ai/) and uploaded to this repository by the
+  project owner (`starship+3d+model.zip` on `main`, file
+  `tripo_convert_29b92b65-78e8-4d91-909e-e931593546bf.fbx`). It is used as the
+  Saber's visual because its layout — forward saucer, compact engineering hull,
+  twin nacelles on aft pylons — is the nearest match in the roster. No claim is
+  made that it reproduces the studio design; replace the file with a real Saber
+  mesh and nothing else needs to change.
+- **In game:** converted from FBX (219,792 tris) to 49,662 tris, 2.54 MB. The
+  AI albedo bake read as a patchwork of UV islands at runtime, so the base
+  colour texture was removed and replaced with a neutral hull factor; the
+  normal and metallic-roughness maps are kept for plating detail. Modelled nose
+  toward **−Z**, hence `"facing": "back"` in `models.config.json`.
+
+Conversion commands (reproducible; `fbx2gltf` is the BSD-3 Facebook converter,
+`@gltf-transform/cli` the glTF optimiser — both npm only):
+
+```bash
+npx fbx2gltf --binary -i starship.fbx -o saber.glb      # 219,792 tris, 9.2 MB
+# strip the AI albedo, keep normal + metal/rough
+npx @gltf-transform/cli optimize saber.glb saber.opt.glb \
+  --compress quantize --simplify-error 0.0015 \
+  --texture-size 1024 --texture-compress webp          # 49,662 tris, 2.54 MB
+```
 
 ---
 
