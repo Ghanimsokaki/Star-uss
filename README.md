@@ -98,10 +98,17 @@ class, run the game, and the hull is swapped in — rescaled, centred and turned
 to face the right way automatically:
 
 ```bash
+# FBX straight from Blender / Maya
+npm run models:convert -- ~/models/sovereign.fbx      # converts, optimises, rescans
+
+# or a ready-made GLB
 cp ~/Downloads/meshy_export.glb public/models/sovereign.glb
 npm run models:check -- public/models/sovereign.glb   # optional sanity check
 npm run dev                                           # manifest rebuilds, hull loads
 ```
+
+Every class id, its dimensions and which hulls still need a mesh:
+**[docs/SHIP-MODEL-LIST.md](docs/SHIP-MODEL-LIST.md)**.
 
 Three hulls already ship as imported models — the Odyssey-class Enterprise-F,
 the Galaxy-class Enterprise-D and the Saber-class frigate — and the rest keep
@@ -121,6 +128,7 @@ vite.config.js           dev server (0.0.0.0), manual chunking
 public/assets/earth/     real Earth day / night / water / topology / cloud JPEGs
 public/models/           your ship GLBs (drop-in) + generated manifest.json
 docs/MODELS.md           Meshy export recipe and the model import pipeline
+docs/SHIP-MODEL-LIST.md  every hull, its filename, dimensions and model status
 docs/CREDITS.md          where the imported models come from, and their licences
 vercel.json              static deploy config (build command, output dir, cache headers)
 tests/                   node:test suites for helm direction and the deploy contract

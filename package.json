@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "STAR TREK: ASCENSION — a 3D starship command game. Explore, fight, build a civilization on Earth, and survive the black hole.",
+  "description": "STAR TREK: ASCENSION \u2014 a 3D starship command game. Explore, fight, build a civilization on Earth, and survive the black hole.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
@@ -12,7 +12,8 @@
     "predev": "node scripts/scan-models.mjs",
     "prebuild": "node scripts/scan-models.mjs",
     "models:check": "node scripts/check-model.mjs",
-    "test": "node --test \"tests/**/*.test.mjs\""
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "models:convert": "node scripts/fbx-to-glb.mjs"
   },
   "dependencies": {
     "@fontsource/orbitron": "^5.2.6",
