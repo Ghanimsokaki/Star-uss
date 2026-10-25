@@ -1,8 +1,8 @@
 # Bringing your own ships (Meshy → game)
 
-The game renders procedural hulls for all sixteen classes. **Two already ship
+The game renders procedural hulls for all twenty-two classes. **Two already ship
 with a high-detail model** — the Odyssey-class Enterprise-F and the Galaxy-class
-Enterprise-D (see §2). Any of the remaining fourteen can be replaced by a model
+Enterprise-D (see §2). Any of the remaining twenty can be replaced by a model
 you made outside the game — the pipeline below is built for **Meshy** exports,
 but it takes any GLB.
 
@@ -36,10 +36,10 @@ One command if you prefer it manually: `npm run models:scan`.
 
 | class | ship | file | notes |
 | --- | --- | --- | --- |
-| `odyssey` | Odyssey-class, Enterprise-F | `odyssey.glb` | 86,607 tris, 11 MB, nods to `"facing": "back"` |
+| `odyssey` | Odyssey-class, Enterprise-F | `odyssey.glb` | 86,607 tris, 11 MB, needs `"facing": "back"` |
 | `galaxy` | Galaxy-class, Enterprise-D | `galaxy.glb` | 141,178 tris, 5.3 MB, converted from an OBJ |
 
-The other fourteen classes use the procedural hull until you drop a file in.
+The other twenty classes use the procedural hull until you drop a file in.
 Sources and licences for the two imported models are in
 [CREDITS.md](CREDITS.md).
 
@@ -60,6 +60,9 @@ lower-case:
 | `akira` | Akira | `vengeance` | Dreadnought (Kelvin) |
 | `kelvin` | Kelvin-type (Kelvin) | `odyssey` | Odyssey (Enterprise-F) |
 | `kelvinconn` | Constitution (Kelvin) | `franklin` | Freedom / Franklin (Kelvin) |
+| `saber` | Saber (U.S.S. Yeager) | `steamrunner` | Steamrunner (U.S.S. Appalachia) |
+| `nebula` | Nebula (U.S.S. Sutherland) | `ambassador` | Ambassador (Enterprise-C) |
+| `crossfield` | Crossfield (U.S.S. Discovery) | `constitution3` | Constitution III (Enterprise-G) |
 
 Ship-name filenames are understood too — `Enterprise.glb`, `USS_Voyager_NCC-74656.glb`,
 `NCC-1701-E.glb`, `Reliant.glb` all resolve to the right class. Anything the

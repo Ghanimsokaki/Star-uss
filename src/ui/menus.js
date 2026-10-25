@@ -5,7 +5,8 @@ import { ENEMIES } from '../data/enemies.js';
 import { TECHS, TECH_ORDER, DISTRICTS, CODEX_ARTICLES } from '../data/tech.js';
 import { MISSIONS, RANK_TITLES } from '../data/missions.js';
 import { audio } from '../core/audio.js';
-import { escapeHtml, fmt, isMobile } from '../core/util.js';
+import { escapeHtml, fmt } from '../core/util.js';
+import { device, setControlPreference, describeDevice } from '../core/device.js';
 
 const tabBtn = (id, label, on) => `<button class="tab ${on ? 'active' : ''}" data-tab="${id}">${label}</button>`;
 
@@ -77,7 +78,8 @@ export function showCodex(game) {
 }
 
 export function showHowTo() {
-  const touch = isMobile();
+  const touch = device.scheme === 'touch';
+  const phone = device.form === 'mobile';
   const m = modal({
     title: 'Captain\u2019s Handbook', sub: 'How to play', wide: true,
     body: `
@@ -86,13 +88,13 @@ export function showHowTo() {
         <p>Build your civilisation on Earth → earn credits &amp; research → upgrade your ship → chart new systems → destroy hostiles for bounty → commission bigger hulls → face the black hole.</p>
       </div>
       <div class="grid2" style="gap:10px">
-        <div class="codex-entry">
-          <h4>Flight — Desktop</h4>
-          <p><b>Mouse</b> or <b>W A S D</b> steer · <b>Space</b> / left click phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>Shift</b> boost · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>V</b> weapons assist on/off · <b>Esc</b> close panels</p>
+        <div class="codex-entry" style="${touch ? 'opacity:.55' : ''}">
+          <h4>Flight — Mouse &amp; keyboard</h4>
+          <p><b>Mouse</b> or <b>W A S D</b> / arrows steer · <b>Space</b> / left click phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>Shift</b> boost · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> throttle · <b>X</b> all stop · <b>V</b> weapons assist · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
         </div>
-        <div class="codex-entry">
+        <div class="codex-entry" style="${touch ? '' : 'opacity:.55'}">
           <h4>Flight — Touch</h4>
-          <p>Drag the <b>left stick</b> to steer. Tap <b>FIRE</b> for phasers, <b>TORP</b> for torpedoes, <b>✷</b> for your ship's special ability, <b>BOOST</b> for a burst of speed, <b>SCAN</b> near a planet or anomaly, and <b>WARP</b> to jump to another star system.</p>
+          <p><b>Drag anywhere</b> on the view to steer, then let go — no joystick to find. <b>Tap</b> the view to lock the nearest target. The right-hand arc is your thumb: <b>FIRE</b>, <b>TORP</b>, <b>✷</b> ability, <b>BOOST</b>, <b>SCAN</b>, <b>WARP</b>. The <b>▲▼</b> rail on the right edge is impulse throttle and the <b>■</b> button is all-stop.</p>
         </div>
         <div class="codex-entry">
           <h4>Earth &amp; Civilisation</h4>
@@ -106,6 +108,10 @@ export function showHowTo() {
       <div class="codex-entry" style="margin-top:10px">
         <h4>Travelling Between Stars</h4>
         <p>Press <b>T</b> (or the <b>WARP</b> button) to open the galaxy map. Pick a star on the left, then hit <b>Engage warp</b> or press <b>Enter</b> — you will get a full warp-jump sequence and arrive in the new system. Each jump costs dilithium based on distance and threat.</p>
+      </div>
+      <div class="codex-entry" style="margin-top:10px">
+        <h4>Which controls am I using?</h4>
+        <p>The game detects your device at boot and again whenever the window changes: a phone or tablet gets touch controls with an on-screen pad and thumb-sized buttons, a desktop gets mouse-plus-keyboard. Detected right now: <b>${escapeHtml(describeDevice())}</b>${phone ? ' — this looks like a phone, so the HUD is trimmed to fit.' : ''}. Force a scheme any time in <b>Settings → Controls</b>.</p>
       </div>
       <div class="codex-entry" style="margin-top:10px">
         <h4>Survive the Singularity</h4>
@@ -126,6 +132,14 @@ export function showSettings(app) {
         <div><div class="nm">Graphics</div><div class="ds">Resolution, bloom and model detail</div></div>
         <div class="seg" data-seg="quality">
           ${['auto', 'low', 'medium', 'high'].map((q) => `<button data-q="${q}" class="${quality === q ? 'on' : ''}">${q}</button>`).join('')}
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Controls</div><div class="ds">Detected: ${escapeHtml(describeDevice())}</div></div>
+        <div class="seg" data-seg="controls">
+          <button data-c="auto" class="${(g.state.settings.controls || 'auto') === 'auto' ? 'on' : ''}">Auto</button>
+          <button data-c="mobile" class="${g.state.settings.controls === 'mobile' ? 'on' : ''}">Touch</button>
+          <button data-c="desktop" class="${g.state.settings.controls === 'desktop' ? 'on' : ''}">Mouse</button>
         </div>
       </div>
       <div class="setting-row">
@@ -164,7 +178,7 @@ export function showSettings(app) {
         <div><div class="nm" style="color:#ff9d94">Reset universe</div><div class="ds">Erase your save and start a new mission</div></div>
         <button class="btn sm danger" data-reset>Reset</button>
       </div>
-      <p class="tiny faint" style="margin:14px 0 0;line-height:1.6">STAR TREK: ASCENSION — a fan-made 3D starship command game. Ships and factions are inspired by Star Trek; all models, textures and audio assets are generated procedurally or sourced from public-domain NASA Earth imagery.</p>`,
+      <p class="tiny faint" style="margin:14px 0 0;line-height:1.6">STAR TREK: ASCENSION — a fan-made 3D starship command game. Ships and factions are inspired by Star Trek. Most hulls, all textures and all audio are generated procedurally; Earth's maps are NASA-derived public-domain imagery, and two imported ship models come from MIT-licensed GitHub repositories (see docs/CREDITS.md).</p>`,
     footer: `<button class="btn ghost" data-close2>Done</button>`,
   });
   const elm = m.el;
@@ -186,6 +200,19 @@ export function showSettings(app) {
     g.state.settings.invertY = b.dataset.iy === 'on';
     g.save();
     audio.ui();
+  }));
+  elm.querySelectorAll('[data-seg="controls"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="controls"] button').forEach((x) => x.classList.toggle('on', x === b));
+    const pref = b.dataset.c;
+    g.state.settings.controls = pref;
+    setControlPreference(pref);
+    app.input?.applyScheme?.(device.scheme);
+    g.save();
+    audio.ui();
+    toast(pref === 'auto'
+      ? `Auto — ${device.scheme === 'touch' ? 'touch' : 'mouse + keys'} controls`
+      : pref === 'mobile' ? 'Touch controls: drag to steer, tap to target' : 'Mouse + keyboard controls',
+    'good', 2400);
   }));
   elm.querySelectorAll('[data-seg="audio"] button').forEach((b) => b.addEventListener('click', () => {
     elm.querySelectorAll('[data-seg="audio"] button').forEach((x) => x.classList.toggle('on', x === b));

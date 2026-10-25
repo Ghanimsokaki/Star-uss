@@ -8,6 +8,7 @@ import { el, $, $$, toast, modal, bar, fmtC, fmt } from '../ui/dom.js';
 import { fleetForSystem, makeEnemy } from '../data/enemies.js';
 import { PLANET_TYPES as PT, STAR_LABEL } from '../data/galaxy.js';
 import { audio } from '../core/audio.js';
+import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -34,7 +35,7 @@ export class SystemScene {
     this.shake = 0;
     this.speed = 0;
     this.boosting = false;
-    this.throttle = 0.72;
+    this.throttle = 0.72;   // 0.25 .. 1, driven by z/c, the pad, or the touch rail
     this.fireCd = 0;
     this.torpCd = 0;
     this.abilityCd = 0;
@@ -44,6 +45,12 @@ export class SystemScene {
     this.saucerTimer = 0;
     this.speedBoostTimer = 0;
     this.pointDefenseTimer = 0;
+    // 24th/25th-century hull abilities
+    this.evadeTimer = 0;        // Saber: incoming fire mostly misses
+    this.guardTimer = 0;        // Ambassador: Last Stand damage soak
+    this.markTimer = 0;         // Nebula: Sensor Sweep damage buff
+    this.sporeTimer = 0;        // Crossfield: post-jump damage window
+    this.overwatchTimer = 0;    // Constitution III: multi-target phasers
     this.scanCd = 0;
     this.target = null;
     this.reticlePos = { x: 0, y: 0 };
@@ -103,6 +110,7 @@ export class SystemScene {
     ];
     this.app.input.bindActions(this.ui);
     this.app.input.bindStick($('#stick', this.ui), $('#stick-knob', this.ui));
+    this._showSchemeHint();
   }
 
   exit() {
@@ -110,6 +118,9 @@ export class SystemScene {
     this._bindings.forEach((off) => off());
     this._bindings = [];
     this._teardown();
+    this._schemeOff?.();
+    this._schemeOff = null;
+    clearTimeout(this._hintTimer);
     this.ui?.remove();
     this.ui = null;
     audio.stopEngine();
@@ -147,6 +158,7 @@ export class SystemScene {
     this.dead = false;
     this.hull = 1; this.shield = 1; this.boost = 1;
     this.fireCd = 0; this.torpCd = 0; this.abilityCd = 0; this.scanCd = 0; this.bluffTimer = 0; this.hullPlateTimer = 0; this.saucerTimer = 0; this.speedBoostTimer = 0; this.pointDefenseTimer = 0;
+    this.evadeTimer = 0; this.guardTimer = 0; this.markTimer = 0; this.sporeTimer = 0; this.overwatchTimer = 0;
     this.projectiles = [];
     this.effects = [];
     this._labelsEl = null;
@@ -421,20 +433,28 @@ export class SystemScene {
             <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo (F)"><span class="ico">◉</span><span class="lbl">TORP</span><span class="kc">F</span></button>
             <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold Space)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">SPC</span></button>
           </div>
-          <div class="control-strip">
+          <div class="control-strip" id="control-strip">
             <span><b>WASD</b> / mouse — steer</span><span class="sep"></span>
             <span><b>Space</b> fire</span><span class="sep"></span>
             <span><b>F</b> torpedo</span><span class="sep"></span>
             <span><b>E</b> ability</span><span class="sep"></span>
             <span><b>Q</b> target</span><span class="sep"></span>
             <span><b>T</b> warp</span><span class="sep"></span>
-            <span><b>V</b> switch fire assist</span>
+            <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
+            <span><b>X</b> brake</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
-          <div class="throttle-ui">
+          <div class="throttle-ui" id="throttle-ui">
             <div class="track"><i id="throttle-fill" style="height:72%"></i></div>
             <div class="lbl">IMP</div>
           </div>
+          <div class="throttle-pad" id="throttle-pad">
+            <button class="thr-btn up" data-action="throttleUp" data-hold="1" title="More impulse power"><span>▲</span></button>
+            <div class="thr-read" id="thr-read">72%</div>
+            <button class="thr-btn down" data-action="throttleDown" data-hold="1" title="Less impulse power"><span>▼</span></button>
+            <button class="thr-btn brake" data-action="brake" data-hold="0" title="All stop"><span>■</span></button>
+          </div>
+          <div class="touch-hint" id="touch-hint">Drag to steer · tap to lock a target</div>
           <div class="globe-labels" id="obj-labels"></div>
         </div>
       </div>`);
@@ -458,6 +478,29 @@ export class SystemScene {
     this.addLog(`Entering ${sys.name} — ${STAR_LABEL[sys.star] || 'stellar body'}`, 'good');
     this.addLog('Phasers: Space / FIRE · Torpedoes: F / TORP · Scan: E / SCAN', '');
     this._updateHud(true);
+  }
+
+  /**
+   * The HUD explains itself in whichever language the current device speaks:
+   * a thumb gets a one-line gesture reminder, a keyboard gets the key strip.
+   * Re-shown whenever the scheme flips (Settings, or a tablet keyboard popping in).
+   */
+  _showSchemeHint() {
+    const hint = $('#touch-hint', this.ui);
+    const strip = $('#control-strip', this.ui);
+    const touch = isTouchScheme();
+    if (strip) strip.hidden = touch;
+    if (!hint) return;
+    hint.hidden = !touch;
+    if (!touch) return;
+    hint.textContent = device.form === 'tablet'
+      ? 'Drag anywhere to steer · tap a target to lock it on'
+      : 'Drag to steer · tap to lock · buttons fire';
+    hint.classList.remove('fade');
+    clearTimeout(this._hintTimer);
+    this._hintTimer = setTimeout(() => hint.classList.add('fade'), 7000);
+    this._schemeOff?.();
+    this._schemeOff = onDeviceChange(() => this._showSchemeHint());
   }
 
   addLog(text, kind = '') {
@@ -509,8 +552,10 @@ export class SystemScene {
         const local = toT.clone().applyQuaternion(this.player.quaternion.clone().invert()).normalize();
         const ahead = local.z > 0.35;
         if (ahead) {
-          assistX = clamp(local.x * 1.6, -1, 1) * 0.42;
-          assistY = clamp(local.y * 1.6, -1, 1) * 0.34;
+          // thumbs are less precise than a mouse, so the helm helps a little more
+          const strength = isTouchScheme() ? 1.35 : 1;
+          assistX = clamp(local.x * 1.6, -1, 1) * 0.42 * strength;
+          assistY = clamp(local.y * 1.6, -1, 1) * 0.34 * strength;
         }
       }
     }
@@ -523,6 +568,17 @@ export class SystemScene {
     this.player.quaternion.multiply(qYaw).multiply(qPitch);
     // prevent roll drift
     this.player.quaternion.normalize();
+
+    // --- impulse throttle: hold Z / the ▲ pad, or C / ▼. X is all-stop.
+    if (input.throttleRate) {
+      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0.25, 1);
+    }
+    if (input.consume('brake')) {
+      this.throttle = 0.3;
+      this._abilityRing('#9fd8ff', 8);
+      toast('All stop — impulse power reduced', 'warn', 1400);
+      audio.ui();
+    }
 
     const boosting = input.actions.boost && this.boost > 0.02;
     this.boosting = boosting;
@@ -615,6 +671,11 @@ export class SystemScene {
     this.saucerTimer = Math.max(0, this.saucerTimer - dt);
     this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
     this.pointDefenseTimer = Math.max(0, this.pointDefenseTimer - dt);
+    this.evadeTimer = Math.max(0, this.evadeTimer - dt);
+    this.guardTimer = Math.max(0, this.guardTimer - dt);
+    this.markTimer = Math.max(0, this.markTimer - dt);
+    this.sporeTimer = Math.max(0, this.sporeTimer - dt);
+    this.overwatchTimer = Math.max(0, this.overwatchTimer - dt);
     this.scanCd = Math.max(0, this.scanCd - dt);
 
     const autoFire = this.game.state.settings.autoFire;
@@ -699,10 +760,25 @@ export class SystemScene {
     this._spawnBeam(muzzle, end, this.game.shipRecord.nacelle || '#59e0ff', hit ? 1 : 0.65);
     audio.phaser(0.2);
     if (hit) {
-      const dmg = stats.phaser * (this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 1.5 : 1);
+      let mul = this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 1.5 : 1;
+      if (this.sporeTimer > 0) mul *= 1.5;
+      const dmg = stats.phaser * mul;
       this._damageEnemy(target, dmg);
       this._impact(end, this.game.shipRecord.nacelle || '#59e0ff');
       this.shake = Math.max(this.shake, 0.18);
+      // Overwatch: the turrets keep shooting at whatever else is in the arc
+      if (this.overwatchTimer > 0) {
+        const extra = this._aliveEnemies()
+          .filter((e) => e !== target)
+          .map((e) => ({ e, d: e.group.position.distanceTo(this.player.position), dir: e.group.position.clone().sub(muzzle) }))
+          .filter((o) => o.d < 700 && o.dir.normalize().dot(forward) > 0.2)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 2);
+        for (const o of extra) {
+          this._spawnBeam(muzzle, o.e.group.position.clone(), this.game.shipRecord.nacelle || '#59e0ff', 0.5);
+          this._damageEnemy(o.e, dmg * 0.6);
+        }
+      }
     }
     // separated saucer section adds its own beam
     if (this.saucerSection && target) {
@@ -850,6 +926,77 @@ export class SystemScene {
       this._abilityRing('#ff8a7d', 32);
       this.addLog('Dreadnought barrage away — reactor dumped to shields', 'good');
       audio.torpedo(0.5);
+    } else if (ability.id === 'evasive') {
+      this.evadeTimer = 4;
+      this.speedBoostTimer = Math.max(this.speedBoostTimer, 3);
+      this._abilityRing('#a7f0ff', 16);
+      this.addLog('Evasive pattern — reaction control is jinking the hull', 'good');
+      toast('Evasive Pattern', 'good', 1800);
+      audio.upgrade();
+    } else if (ability.id === 'torpedoRun') {
+      const alive = this._aliveEnemies();
+      for (let i = 0; i < 8; i++) {
+        const muzzle = this._muzzleWorld('torp');
+        const t = alive[i % Math.max(1, alive.length)];
+        const dir = t
+          ? t.group.position.clone().sub(muzzle).normalize()
+          : V(0, 0, 1).applyQuaternion(this.player.quaternion);
+        // a tight fan so a single pass can straddle a hull
+        dir.applyAxisAngle(V(0, 1, 0), (i - 3.5) * 0.035).normalize();
+        this._spawnTorpedo(muzzle, dir, this.stats.torp * 0.62, t || null, 'player');
+      }
+      this.torpCd = Math.min(this.torpCd, 0.2);
+      this._abilityRing('#8fd6ff', 20);
+      this.addLog('Torpedo run — eight away, magazines spent', 'good');
+      audio.torpedo(0.5);
+    } else if (ability.id === 'sensorSweep') {
+      this.markTimer = 10;
+      for (const e of this._aliveEnemies()) {
+        if (e.cloaked) {
+          e.cloaked = false;
+          e.cloak = 0;
+          if (e.group) e.group.visible = true;
+        }
+        this._abilityRing('#9fe6ff', 6);
+      }
+      this.shield = Math.min(this.maxShield, this.shield + this.maxShield * 0.12);
+      this._abilityRing('#9fe6ff', 26);
+      this.addLog('Sensor sweep — cloaks collapsed, firing solutions locked (+35% damage, 10s)', 'good');
+      audio.scan();
+      audio.confirm();
+    } else if (ability.id === 'lastStand') {
+      this.guardTimer = 8;
+      this.hull = Math.min(this.maxHull, this.hull + this.maxHull * 0.12);
+      this._abilityRing('#ffd9a0', 28);
+      this.addLog('Last Stand — structural integrity field at maximum, damage down 55%', 'good');
+      toast('Last Stand', 'good', 2000);
+      audio.upgrade();
+    } else if (ability.id === 'sporeJump') {
+      const enemy = this._nearestEnemy();
+      const fwd = V(0, 0, 1).applyQuaternion(this.player.quaternion);
+      if (enemy) {
+        const eFwd = V(0, 0, 1).applyQuaternion(enemy.group.quaternion);
+        // reappear astern of the target, nose already on it
+        this.player.position.copy(enemy.group.position)
+          .addScaledVector(eFwd, -80)
+          .add(V(0, 14, 0));
+        const m = new THREE.Matrix4().lookAt(this.player.position, enemy.group.position, V(0, 1, 0));
+        this.player.quaternion.setFromRotationMatrix(m);
+        this.addLog('Spore jump — emerged astern of the target, weapons hot', 'good');
+      } else {
+        this.player.position.addScaledVector(fwd, 300);
+        this.addLog('Spore jump — displaced 300 units ahead', 'good');
+      }
+      this.sporeTimer = 6;
+      this._warpFlash(this.player.position);
+      this._abilityRing('#c9a6ff', 30);
+      audio.warp();
+    } else if (ability.id === 'overwatch') {
+      this.overwatchTimer = 8;
+      this._abilityRing('#a9e7ff', 24);
+      this.addLog('Overwatch — turrets slaved to the plot, engaging multiple contacts', 'good');
+      toast('Overwatch', 'good', 1800);
+      audio.upgrade();
     } else if (ability.id === 'mva') {
       this.abilityTimer = 8;
       this._spawnClones();
@@ -1126,7 +1273,7 @@ export class SystemScene {
   /* ================================================================ damage */
   _damageEnemy(enemy, amount) {
     if (!enemy || enemy.dead) return;
-    let dmg = amount;
+    let dmg = this.markTimer > 0 ? amount * 1.35 : amount;
     if (enemy.shield > 0) {
       enemy.shield -= dmg;
       enemy.bubble.material.opacity = 0.42;
@@ -1168,6 +1315,7 @@ export class SystemScene {
     if (!ignoreShield) {
       if (this.hullPlateTimer > 0) dmg *= 0.4;
       if (this.saucerTimer > 0) dmg *= 0.5;
+      if (this.guardTimer > 0) dmg *= 0.45;
     }
     if (!ignoreShield && this.shield > 0) {
       this.shield -= dmg;
@@ -1487,8 +1635,13 @@ export class SystemScene {
           continue;
         }
         if (p.mesh.position.distanceTo(this.player.position) < 5.5) {
-          this._damagePlayer(p.damage);
-          this._impact(p.mesh.position.clone(), '#ff8a6d');
+          if (this.evadeTimer > 0 && Math.random() < 0.7) {
+            // Saber's Evasive Pattern: the bolt passes through where the hull was
+            this._impact(p.mesh.position.clone(), '#a7f0ff');
+          } else {
+            this._damagePlayer(p.damage);
+            this._impact(p.mesh.position.clone(), '#ff8a6d');
+          }
           hit = true;
         }
       }
@@ -1596,7 +1749,9 @@ export class SystemScene {
       if (lbl) lbl.textContent = ready ? key : `${Math.ceil(this.abilityCd)}s`;
     }
     const tf = $('#throttle-fill', this.ui);
-    if (tf) tf.style.height = `${(this.boosting ? 100 : 72)}%`;
+    if (tf) tf.style.height = `${Math.round((this.boosting ? 1 : this.throttle) * 100)}%`;
+    const tr = $('#thr-read', this.ui);
+    if (tr) tr.textContent = `${Math.round((this.boosting ? 1 : this.throttle) * 100)}%`;
     if (force) this._refreshMissionLine();
   }
 

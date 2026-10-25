@@ -55,7 +55,7 @@ export function newGameState(seed = 'alpha') {
     techs: [],
     missionsDone: [],
     stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
-    settings: { quality: 'auto', muted: false, autoFire: true, aimAssist: true, invertY: false },
+    settings: { quality: 'auto', muted: false, autoFire: true, aimAssist: true, invertY: false, controls: 'auto' },
     flags: { blackholeEntered: false, bossDefeated: false, introSeen: false, capitalPlaced: true },
     log: [],
   };
@@ -85,6 +85,12 @@ export class Game {
   static hasSave() {
     const s = storage.get(SAVE_KEY);
     return !!(s && s.version >= 1 && s.credits != null);
+  }
+
+  /** Settings as stored on disk, before `load()` has run (used at boot). */
+  static storedSettings() {
+    const s = storage.get(SAVE_KEY);
+    return s?.settings && typeof s.settings === 'object' ? s.settings : null;
   }
 
   load() {

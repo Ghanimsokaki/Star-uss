@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { isMobile } from './util.js';
+import { device, reportGPU } from './device.js';
 
 const QUALITY = {
   low: { dpr: 1, bloom: false, samples: 0, detail: 0.45, shadows: false, particles: 0.4 },
@@ -22,6 +22,8 @@ export class Viewport {
       stencil: false,
       preserveDrawingBuffer: false,
     });
+    // read the GPU once — it is the most reliable quality signal we get
+    reportGPU(this.renderer);
     this.renderer.setClearColor(0x02040a, 1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
@@ -57,13 +59,9 @@ export class Viewport {
   }
 
   autoQuality() {
-    const dpr = window.devicePixelRatio || 1;
-    const mobile = isMobile();
-    const cores = navigator.hardwareConcurrency || 4;
-    const mem = navigator.deviceMemory || 4;
-    let q = 'medium';
-    if (mobile) q = (dpr > 2.5 || cores <= 4 || mem <= 3) ? 'low' : 'medium';
-    else q = (cores >= 8 || mem >= 8) ? 'high' : 'medium';
+    // one shared verdict from device.js — it already weighed cores, memory,
+    // DPR, form factor and (when the browser allows it) the GPU string
+    const q = device.tier === 'high' ? 'high' : device.tier === 'low' ? 'low' : 'medium';
     this.setQuality(q);
     return q;
   }

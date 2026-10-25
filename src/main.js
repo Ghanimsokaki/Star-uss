@@ -4,7 +4,7 @@ import { Viewport } from './core/viewport.js';
 import { Input } from './core/input.js';
 import { audio } from './core/audio.js';
 import { getEnvironment } from './art/environment.js';
-import { game } from './game.js';
+import { game, Game } from './game.js';
 import { TitleScene } from './scenes/title.js';
 import { EarthScene } from './scenes/earth.js';
 import { HangarScene } from './scenes/hangar.js';
@@ -12,7 +12,8 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
 import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro } from './ui/menus.js';
-import { isMobile, storage, clamp } from './core/util.js';
+import { storage, clamp } from './core/util.js';
+import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
 import { playWarp } from './ui/warp.js';
 
 const SCENES = { title: TitleScene, earth: EarthScene, hangar: HangarScene, galaxy: GalaxyScene, system: SystemScene };
@@ -22,6 +23,12 @@ class App {
   constructor(canvas) {
     this.canvas = canvas;
     this.game = game;
+    // decide phone vs desktop (and touch vs mouse) before anything renders
+    watchDevice();
+    // honour the player's saved control choice before the first frame, so a
+    // phone that was forced into mouse mode last session does not boot wrong
+    const savedControls = game.state.settings.controls || Game.storedSettings()?.controls;
+    if (savedControls) setControlPreference(savedControls);
     this.viewport = new Viewport(canvas);
     this.input = new Input(canvas);
     this.environment = getEnvironment(this.viewport.renderer);
@@ -33,7 +40,6 @@ class App {
     this._hudTimer = 0;
     this._chromeShown = false;
 
-    this.viewport.setQuality('medium');
     this.viewport.autoQuality();
     this._bindGlobal();
     this._bindContextLoss();

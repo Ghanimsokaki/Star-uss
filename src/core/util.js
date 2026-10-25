@@ -58,10 +58,18 @@ export const storage = {
   del(key) { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } },
 };
 
+/**
+ * Legacy helper. New code should read `device.form` / `device.scheme` from
+ * core/device.js — it also weighs the pointer type, GPU class and the player's
+ * own override. This stays for any caller that just wants a quick boolean.
+ */
 export const isMobile = () => {
-  const ua = navigator.userAgent || '';
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  const touch = (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0;
+  const screenW = (typeof screen !== 'undefined' && screen.width) || 1280;
+  const screenH = (typeof screen !== 'undefined' && screen.height) || 720;
   return /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini|IEMobile/i.test(ua) ||
-    (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
+    (touch > 1 && Math.min(screenW, screenH) < 900);
 };
 
 export const uid = () => Math.random().toString(36).slice(2, 9);

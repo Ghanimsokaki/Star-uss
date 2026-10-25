@@ -50,6 +50,30 @@ without one.
 
 ---
 
+## Where these two came from, and where the rest are stuck
+
+Both files were found by searching GitHub (the only code host reachable from
+the build sandbox). Roughly 140 Star Trek repositories were scanned for
+`.glb` / `.gltf` / `.obj` / `.fbx` assets. The outcome:
+
+- **Usable, non-LFS, licensed**: the two above.
+- **Everything else with good Star Trek meshes is behind Git LFS.** The sandbox
+  cannot fetch LFS objects (`403 Resource not accessible by integration`), and
+  the working tree only contains 133-byte pointer files. Repositories affected
+  include the well-stocked `siddharthgumballi/Star-Trek-Game` (Voyager,
+  Enterprise-D, Odyssey, Sovereign, Excelsior, Ambassador, Earth Spacedock) and
+  `jonjaques/inertialref` (Enterprise-D).
+- **Non-LFS alternatives found were unusably low-poly** — 46 KB and 66 KB OBJ
+  Enterprises, fewer triangles than the procedural hulls in this game.
+- Sketchfab, CGTrader, TurboSquid, Thingiverse and the Star Trek Online asset
+  archives are all outside the sandbox's network allowlist, so nothing from
+  those can be pulled in automatically.
+
+If you have a model file locally, or a Meshy export, drop it into
+`public/models/` — see [MODELS.md](MODELS.md).
+
+---
+
 ## Everything else
 
 Ship hulls for the other fourteen classes, planets, stars, stations, nebulas
