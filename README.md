@@ -38,6 +38,7 @@ on the fly too.
 | **Warp** | **`T`**, pick a star, `Enter` | **WARP** button |
 | Weapons assist | `V` toggles | Settings |
 | Shipyard / Earth / Galaxy / Missions | `H` / `J` / `G` / `M` | top bar |
+| **Land on a planet** | **`L`** (or the **LAND** button when a planet is in range) | **LAND** button |
 | Close dialog | `Esc` | tap outside |
 | **Free camera** | **`O`** or the **◎ CAM** button | **◎ CAM** button |
 | **Hide every panel** | **`U`** or **❑ HIDE UI** | **❑ HIDE UI** |
@@ -64,6 +65,30 @@ Two buttons sit at the top of the screen, on every screen, above the panels:
 
 The shipyard already has an orbit rig, so a hull can be inspected up close there too.
 
+### Panels are drawers, not walls
+
+Every side panel — Sector Map, Navigation, Construction, Homeworld, and the ones in orbit and on a planet —
+is **closed by default** and opened from a small button rail down the left edge of the screen. One panel at a
+time; tap the world (or the `✕` on the panel) to close it, or press `U` to hide everything. That leaves the
+whole middle of the screen to the game, which matters most on a phone or a half-width browser window.
+
+### Going down to a planet
+
+Fly close to any planet that is not a gas giant and a **LAND** prompt appears (press `L`, tap the button, or
+use *Land on the surface* in the survey report). You set down on the actual surface of that world:
+
+- **Real terrain**, generated from the planet's own seed and biome — oceans, dunes, icefields, lava plains,
+  airless rock — the same planet always looks the same. The landing pad is levelled, the ground rises away
+  from it, and a full sky, sun and starfield sit overhead.
+- **Your ship**, sitting on the pad behind you with its running lights on, plus your away team and two
+  crew following you around.
+- **People to meet.** Four to six colonists, traders, surveyors and crew wander the area. Walk up and press
+  `E` (or tap **TALK**) to hear them out — first conversations pay goodwill in credits and research.
+- **Things to find.** Glowing deposits of dilithium, research samples and salvage, sampled with `R`.
+
+Surface controls: `W A S D` / arrows to walk, `Shift` to run, drag to look, wheel or pinch to zoom,
+`E` to talk, `R` to scan, `L` to lift off and return to orbit. Touch gets a thumbstick and the same buttons.
+
 ---
 
 ## What is in the game
@@ -85,6 +110,8 @@ Five ship systems — hull, shields, weapons, engines, sensors — upgrade indep
 **Combat.** A third-person flight scene with a chase camera: phaser beams that track targets inside your forward arc, photon torpedoes with splash damage, shield bubbles that flare on impact, hull damage, evasive burns, warp-core breaches and per-class special abilities (cloak detection, attack-pattern phaser spreads, multi-vector separation and so on). Hostiles include Klingon B'rel Birds-of-Prey (they cloak), Romulan D'deridex warbirds, Cardassian Galor cruisers, Jem'Hadar fighters, Borg cubes — and at the end of the chain, the Void.
 
 **The black hole.** A shader-driven stellar-mass black hole: pure-black event horizon, photon ring, a turbulent doppler-beamed accretion disk, infalling debris and relativistic jets. The hole's gravity pulls your ship in, drags your hull, and kills you if you cross the horizon. The Vela Singularity hides the endgame boss and the final missions.
+
+**Away missions.** Landing is a real place, not a menu: a seeded, biome-specific surface with walkable terrain, your ship on the pad, an away team, wandering NPCs with dialogue, and scan-able deposits of dilithium, research and salvage. First landings pay a discovery bonus scaled by habitability; finds are logged per planet so nothing pays out twice. See [`docs/AWAY-MISSIONS.md`](docs/AWAY-MISSIONS.md), which also explains `npm run shot` — an offline renderer that draws the surface without a browser.
 
 **Progression.** Ranks, a mission chain with rewards, a codex of ships/factions/locations, achievements-ish mission log, autosave every 20 s and a save in `localStorage`.
 

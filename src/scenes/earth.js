@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { initDrawers } from '../ui/drawers.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EarthGlobe, vec3ToLatLon, latLonToVec3, EARTH_RADIUS } from '../art/earth.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
@@ -88,6 +89,8 @@ export class EarthScene {
     this.globe.removeGhost();
     this._bindings.forEach((off) => off());
     this._bindings = [];
+    this.drawers?.destroy();
+    this.drawers = null;
     this.ui?.remove();
     this.ui = null;
     this._labels?.remove();
@@ -133,6 +136,8 @@ export class EarthScene {
         </div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
+    // panels are drawers: closed by default so the 3D view gets the space
+    this.drawers = initDrawers(this.ui, { key: 'earth' });
 
     this._labels = el('<div class="globe-labels"></div>');
     this.ui.appendChild(this._labels);

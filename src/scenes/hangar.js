@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { initDrawers } from '../ui/drawers.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildShip, disposeObject3D } from '../art/ships3d.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
@@ -124,6 +125,8 @@ export class HangarScene {
   exit() {
     this._bindings?.forEach((off) => off());
     this._bindings = [];
+    this.drawers?.destroy();
+    this.drawers = null;
     this.ui?.remove();
     this.ui = null;
     if (this.ship) {
@@ -189,6 +192,8 @@ export class HangarScene {
         <div class="ship-view-labels" id="ship-labels"></div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
+    // panels are drawers: closed by default so the 3D view gets the space
+    this.drawers = initDrawers(this.ui, { key: 'hangar' });
 
     $$('#hangar-tabs .tab', this.ui).forEach((t) => {
       t.addEventListener('click', () => {

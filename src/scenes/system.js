@@ -87,7 +87,7 @@ export class SystemScene {
     this.built = true;
   }
 
-  enter() {
+  enter(params = {}) {
     if (!this.built) this._buildStatic();
     audio.ensure();
     audio.startMusic();
@@ -95,6 +95,7 @@ export class SystemScene {
     if (sysNow.blackhole || sysNow.boss) audio.startDrone();
     audio.startEngine();
     this._setupSystem();
+    if (params.nearPlanet) this._spawnNear(params.nearPlanet);
     this._buildUI();
     if (!this.game.state.flags.introSeen) this.addLog('Welcome aboard, Captain. Starfleet Command is watching.', 'good');
     const mission = this.game.currentMission;
@@ -469,6 +470,7 @@ export class SystemScene {
           <div class="syslog" id="syslog"></div>
 
           <div class="hud-actions">
+            <button class="act-btn land" data-act="land" id="land-btn" title="Set down on the nearest planet (L)"><span class="ico">⤓</span><span class="lbl">LAND</span><span class="kc">L</span></button>
             <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system (T)"><span class="ico">✧</span><span class="lbl">WARP</span><span class="kc">T</span></button>
             <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact (R)"><span class="ico">⌖</span><span class="lbl">SCAN</span><span class="kc">R</span></button>
             <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability (E)"><span class="ico">✷</span><span class="lbl">ABILITY</span><span class="kc">E</span></button>
@@ -485,6 +487,7 @@ export class SystemScene {
             <span><b>T</b> warp</span><span class="sep"></span>
             <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
             <span><b>X</b> brake</span><span class="sep"></span>
+            <span><b>L</b> land</span><span class="sep"></span>
             <span><b>O</b> camera</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
@@ -505,6 +508,7 @@ export class SystemScene {
     document.getElementById('ui').appendChild(this.ui);
     this._labelsEl = $('#obj-labels', this.ui);
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
+    $('#land-btn', this.ui).onclick = () => this._landAtNearest();
     $('#warp-btn', this.ui).onclick = () => {
       audio.ui();
       this.addLog('Opening the galaxy map — pick a star and engage warp.', 'good');
@@ -731,6 +735,7 @@ export class SystemScene {
     if ((input.actions.fire || autoFire) && this.fireCd <= 0) this._firePhasers();
     if (input.actions.torpedo && this.torpCd <= 0) this._fireTorpedo();
     if (input.consume('cam')) this.freecam?.toggle();
+    if (input.consume('land')) { this._landAtNearest(); return; }
     if (input.consume('ability')) this._useAbility();
     if (input.consume('scan')) this._scanAction();
     if (input.consume('target')) this._cycleTarget();
@@ -750,6 +755,7 @@ export class SystemScene {
 
     this._updateTargeting();
     this._updateScanPrompt();
+    this._updateLandPrompt();
   }
 
   /* ================================================================ targeting */
@@ -1466,6 +1472,61 @@ export class SystemScene {
     return { data: best, kind, dist: bestD, inRange: bestD <= range, range };
   }
 
+  /** Drop out of the sky next to the world we just lifted off from. */
+  _spawnNear(planetId) {
+    const entry = this.planetNodes?.find((n) => n.data.id === planetId);
+    if (!entry || !this.player) return;
+    const centre = entry.node.getWorldPosition(V());
+    const out = V().copy(centre).normalize();
+    const at = centre.clone().add(out.multiplyScalar(entry.radius * 2.4 + 70));
+    at.y += entry.radius * 0.3;
+    this.player.position.copy(at);
+    this.player.lookAt(centre.x, centre.y, centre.z); // nose +Z, so we face the planet
+    this.speed = 48;      // gentle, the damped throttle takes over next frame
+    this.throttle = 0.4;
+  }
+
+  /** The nearest planet with a surface, within landing range. */
+  _nearestLandable() {
+    const p = this.player.position;
+    let best = null;
+    let bestD = Infinity;
+    for (const node of this.planetNodes) {
+      if (!this.game.constructor.canLand(node.data)) continue;
+      const d = node.node.getWorldPosition(V()).distanceTo(p);
+      if (d < bestD) { bestD = d; best = node.data; }
+    }
+    return best ? { data: best, dist: bestD, inRange: bestD <= 210 } : null;
+  }
+
+  _updateLandPrompt() {
+    const btn = $('#land-btn', this.ui);
+    if (!btn) return;
+    const near = this._nearestLandable();
+    btn.classList.toggle('ready', !!(near && near.inRange));
+    btn.classList.toggle('dim', !(near && near.inRange));
+    btn.title = near
+      ? (near.inRange
+        ? `Set down on ${near.data.name} (L)`
+        : `${near.data.name} is ${Math.round(near.dist)} m away — fly closer to land`)
+      : 'No planet in range';
+  }
+
+  /** Set the away team down on the closest planet. */
+  _landAtNearest() {
+    const near = this._nearestLandable();
+    if (!near || !near.inRange) {
+      toast('No planet close enough to land on — fly toward a world', 'warn');
+      audio.error();
+      return;
+    }
+    const planet = near.data;
+    audio.ui();
+    this.addLog(`Landing on ${planet.name}`, 'good');
+    toast(`Descending to ${planet.name}…`, 'good', 2200);
+    this.app.setScene('planet', { planetId: planet.id });
+  }
+
   _updateScanPrompt() {
     const btn = $('#scan-btn', this.ui);
     if (!btn) return;
@@ -1551,9 +1612,19 @@ export class SystemScene {
           <span class="chip violet">+${r.research} RP</span>
           <span class="chip green">+${r.xp} XP</span>
         </div>`,
-      footer: `<button class="btn primary" data-close2>Log survey</button>`,
+      footer: `${this.game.constructor.canLand({ type: p.type })
+        ? `<button class="btn ghost" data-land>Land on the surface</button>`
+        : '<span class="tiny faint" style="align-self:center">Gas giant — orbit only</span>'}
+        <button class="btn primary" data-close2>Log survey</button>`,
     });
     m.el.querySelector('[data-close2]').onclick = () => m.close();
+    const landBtn = m.el.querySelector('[data-land]');
+    if (landBtn) {
+      landBtn.onclick = () => {
+        m.close();
+        this.app.setScene('planet', { planetId: p.id });
+      };
+    }
     audio.credits();
   }
 

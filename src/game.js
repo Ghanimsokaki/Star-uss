@@ -1,11 +1,11 @@
 import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_ORDER, MAX_UPGRADE, computeStats, moduleCost, PALETTES } from './data/ships.js';
 import { DISTRICTS, DISTRICT_ORDER, TECHS, districtUpgradeCost } from './data/tech.js';
-import { buildGalaxy, planetById, surveyPlanet, warpCost } from './data/galaxy.js';
+import { buildGalaxy, planetById, surveyPlanet, warpCost, PLANET_TYPES } from './data/galaxy.js';
 import { MISSIONS, RANK_TITLES, rankFor, nextRankXp } from './data/missions.js';
 import { storage, uid, clamp } from './core/util.js';
 
 const SAVE_KEY = 'startrek.ascension.save.v1';
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 
 function defaultLevels() {
   return { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 };
@@ -52,9 +52,12 @@ export function newGameState(seed = 'alpha') {
     cleared: [],
     surveyed: [],
     anomalies: [],
+    // planets the away team has actually set down on, keyed by planet id
+    landings: {},
+    currentPlanetId: null,
     techs: [],
     missionsDone: [],
-    stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
+    stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
     // autoFire is OFF: the weapons are the player's to pull. It stays a settings
     // toggle for anyone who wants the old hands-free behaviour.
     settings: { quality: 'auto', muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto', hudHidden: false },
@@ -104,6 +107,8 @@ export class Game {
     // v4: phasers used to fire hands-free by default, which read as the ship
     // shooting on its own. One-time migration — an explicit "On" afterwards sticks.
     if (savedVersion < 4) this.state.settings.autoFire = false;
+    // v5: planets can be landed on, which needs somewhere to remember it
+    if (!this.state.landings || typeof this.state.landings !== 'object') this.state.landings = {};
     this.state.version = SAVE_VERSION;
     // guarantee a capital exists
     if (!this.state.civ.districts?.length) this.state.civ.districts = fresh.civ.districts;
@@ -458,6 +463,108 @@ export class Game {
     this.bus.emit('change');
     this.checkMissions();
     return { ok: true, result, rewards: { credits, dilithium, research, xp: result.xp } };
+  }
+
+  /* ------------------------------------------------------------------ landing */
+  /**
+   * Is there ground to stand on? Gas giants are orbited, never visited.
+   * @param {{type?:string}} planet
+   */
+  static canLand(planet) {
+    return !!planet && planet.type !== 'gas';
+  }
+
+  isLanded(planetId) { return !!this.state.landings?.[planetId]; }
+
+  landingInfo(planetId) { return this.state.landings?.[planetId] || null; }
+
+  /**
+   * Set the away team down on a planet. The first landing in a system's history
+   * pays a discovery bonus; repeat visits are free.
+   *
+   * @returns {{ok:boolean, why?:string, first?:boolean, bonus?:object,
+   *            record?:object, planet?:object, system?:object}}
+   */
+  landOn(planetId) {
+    const found = planetById(this.galaxy, planetId);
+    if (!found) return { ok: false, why: 'Unknown planet' };
+    const { planet, system } = found;
+    if (!Game.canLand(planet)) return { ok: false, why: 'Gas giant — nothing to land on' };
+
+    if (!this.state.landings) this.state.landings = {};
+    const first = !this.state.landings[planetId];
+    const rec = this.state.landings[planetId] || (this.state.landings[planetId] = {
+      first: Date.now(), visits: 0, finds: [], met: [],
+    });
+    rec.visits = (rec.visits || 0) + 1;
+    rec.last = Date.now();
+    this.state.currentPlanetId = planetId;
+
+    let bonus = null;
+    if (first) {
+      const type = PLANET_TYPES[planet.type]?.habitability ?? 0.3;
+      bonus = {
+        credits: Math.round(600 + type * 1400),
+        research: Math.round(20 + type * 60),
+        dilithium: Math.round(4 + type * 14),
+        xp: Math.round(30 + type * 40),
+      };
+      this.state.credits += bonus.credits;
+      this.state.research += bonus.research;
+      this.state.dilithium += bonus.dilithium;
+      this.state.stats.landings = (this.state.stats.landings || 0) + 1;
+      this.state.stats.creditsEarned = (this.state.stats.creditsEarned || 0) + bonus.credits;
+      this.addXp(bonus.xp);
+    }
+
+    this.save(true);
+    this.bus.emit('change');
+    if (first) this.checkMissions();
+    return { ok: true, first, bonus, record: rec, planet, system };
+  }
+
+  /** Leave the surface. Keeps the record so the ground stays "known". */
+  leavePlanet() {
+    this.state.currentPlanetId = null;
+    this.save();
+    this.bus.emit('change');
+  }
+
+  /**
+   * Log one surface find (a mineral deposit, a ruin, a scan).
+   * Only the first time counts for reward.
+   */
+  logFind(planetId, findId, reward = {}) {
+    const rec = this.state.landings?.[planetId];
+    if (!rec) return { ok: false, why: 'Not on the surface' };
+    rec.finds = rec.finds || [];
+    const isNew = !rec.finds.includes(findId);
+    if (isNew) {
+      rec.finds.push(findId);
+      this.state.stats.finds = (this.state.stats.finds || 0) + 1;
+      this.state.credits += reward.credits || 0;
+      this.state.research += reward.research || 0;
+      this.state.dilithium += reward.dilithium || 0;
+      this.state.stats.creditsEarned += reward.credits || 0;
+      if (reward.xp) this.addXp(reward.xp);
+      this.save(true);
+      this.bus.emit('change');
+    }
+    return { ok: true, first: isNew };
+  }
+
+  /** Record meeting a face on the surface; returns whether it was the first time. */
+  meetPerson(planetId, personId) {
+    const rec = this.state.landings?.[planetId];
+    if (!rec) return { first: false };
+    rec.met = rec.met || [];
+    const first = !rec.met.includes(personId);
+    if (first) {
+      rec.met.push(personId);
+      this.save();
+      this.bus.emit('change');
+    }
+    return { first };
   }
 
   scanAnomaly(anomalyId) {

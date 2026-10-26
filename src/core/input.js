@@ -75,6 +75,7 @@ export class Input {
       if (k === 't') this._press('warp');
       if (k === 'v') this._press('assist');
       if (k === 'o') this._press('cam');
+      if (k === 'l') this._press('land');
       if (k === 'h') this._press('help');
       if (k === 'p') this._press('pause');
     });

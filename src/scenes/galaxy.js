@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { initDrawers } from '../ui/drawers.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
 import { glowTexture } from '../art/textures.js';
@@ -165,6 +166,8 @@ export class GalaxyScene {
     this._enterKey = null;
     this._bindings?.forEach((off) => off());
     this._bindings = [];
+    this.drawers?.destroy();
+    this.drawers = null;
     this.ui?.remove();
     this.ui = null;
     this._labels?.remove();
@@ -196,6 +199,8 @@ export class GalaxyScene {
         <div class="globe-hint on" style="opacity:.75">Drag to orbit · scroll / pinch to zoom · tap a star to select</div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
+    // panels are drawers: closed by default so the 3D view gets the space
+    this.drawers = initDrawers(this.ui, { key: 'galaxy' });
     this._labels = el('<div class="globe-labels"></div>');
     this.ui.appendChild(this._labels);
   }

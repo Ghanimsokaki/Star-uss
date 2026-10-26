@@ -10,14 +10,15 @@ import { EarthScene } from './scenes/earth.js';
 import { HangarScene } from './scenes/hangar.js';
 import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
+import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
 import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro } from './ui/menus.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
 import { playWarp } from './ui/warp.js';
 
-const SCENES = { title: TitleScene, earth: EarthScene, hangar: HangarScene, galaxy: GalaxyScene, system: SystemScene };
-const SCENE_LABEL = { title: 'Title', earth: 'Earth', hangar: 'Shipyard', galaxy: 'Galaxy map', system: 'Space' };
+const SCENES = { title: TitleScene, earth: EarthScene, hangar: HangarScene, galaxy: GalaxyScene, system: SystemScene, planet: PlanetScene };
+const SCENE_LABEL = { title: 'Title', earth: 'Earth', hangar: 'Shipyard', galaxy: 'Galaxy map', system: 'Space', planet: 'Planet surface' };
 
 class App {
   constructor(canvas) {
@@ -223,7 +224,7 @@ class App {
       if (name === 'title') {
         this._hideChrome();
       } else {
-        this._showChrome(name === 'system' ? 'galaxy' : name);
+        this._showChrome(name === 'system' || name === 'planet' ? 'galaxy' : name);
       }
       this.input.consumeAll();
       const el2 = document.querySelector('.screen.active');
@@ -241,6 +242,7 @@ class App {
     if (id === 'codex') { showCodex(game); return; }
     if (id === 'settings') { showSettings(this); return; }
     if (id === 'system') { this.setScene('system'); return; }
+    if (id === 'planet') { this.setScene('planet', { planetId: game.state.currentPlanetId }); return; }
     if (id === this.currentName) return;
     this.setScene(id);
   }

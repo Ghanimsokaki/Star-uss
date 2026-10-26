@@ -46,7 +46,8 @@ test('an old save that had auto-fire on is migrated off, once', () => {
   const loaded = new Game();
   assert.equal(loaded.load(), true);
   assert.equal(loaded.state.settings.autoFire, false, 'v3 saves are migrated to manual fire');
-  assert.equal(loaded.state.version, 4, 'the migration is stamped so it cannot run twice');
+  assert.ok(loaded.state.version >= 4, 'the migration is stamped so it cannot run twice');
+  assert.equal(loaded.state.settings.autoFire, false);
 
   // the player may turn it back on, and that choice must survive a reload
   loaded.state.settings.autoFire = true;

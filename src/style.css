@@ -746,3 +746,133 @@ body.free-cam .touch-hint { display: none; }
   .view-controls { top: calc(52px + var(--safe-t)); }
   .vc-btn { height: 26px; }
 }
+
+/* ---------- panel drawers ----------
+   Side panels are closed by default so the globe / map / ship gets the whole
+   viewport. A rail of buttons opens one; a tap anywhere else closes it. */
+.drawer-rail {
+  position: absolute; z-index: 8;
+  top: calc(74px + var(--safe-t)); left: calc(12px + var(--safe-l));
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  pointer-events: auto;
+}
+.drawer-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 34px; padding: 0 12px 0 10px; cursor: pointer;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(9,18,32,.92), rgba(6,12,22,.78));
+  backdrop-filter: blur(12px); color: var(--ink-dim);
+  font-family: var(--font-h); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  transition: color .15s, border-color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.drawer-btn .ic { font-size: 14px; color: var(--cyan); line-height: 1; }
+.drawer-btn .tx { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
+.drawer-btn .tx b { font-weight: 600; }
+.drawer-btn .tx i { font-style: normal; font-size: 8.5px; letter-spacing: .12em; color: var(--ink-faint); }
+.drawer-btn:hover { color: var(--ink); border-color: rgba(89,224,255,.45); }
+.drawer-btn.on { color: var(--bg); background: var(--cyan); border-color: var(--cyan); }
+.drawer-btn.on .ic, .drawer-btn.on .tx i { color: rgba(4,6,13,.72); }
+
+/* the panel itself: off-canvas until opened */
+.panel.drawer-panel {
+  transition: transform .26s cubic-bezier(.22,.68,.28,1), opacity .2s;
+  will-change: transform;
+}
+.panel.drawer-panel.no-anim { transition: none; }
+/* #ui .panel sets pointer-events:auto with an id, so the closed state has to
+   out-specify it or an off-screen panel keeps swallowing taps */
+#ui .panel.drawer-panel:not(.open) { pointer-events: none; opacity: 0; }
+#ui .panel.drawer-panel.open { pointer-events: auto; opacity: 1; }
+
+/* push each side off its own edge */
+.panel.drawer-panel[data-drawer="left"]:not(.open) { transform: translateX(calc(-100% - 24px)); }
+.panel.drawer-panel[data-drawer="right"]:not(.open) { transform: translateX(calc(100% + 24px)); }
+
+/* a scrim appears under an open drawer on narrow screens, so the close target
+   is the whole world instead of a 20px ✕ */
+.drawer-scrim { position: absolute; inset: 0; z-index: 5; display: none; pointer-events: none; }
+.screen.has-drawer .drawer-scrim { display: block; pointer-events: auto; background: rgba(2,5,10,.28); }
+
+.drawer-close {
+  width: 26px; height: 26px; flex: 0 0 auto; cursor: pointer;
+  display: grid; place-items: center; font-size: 12px; line-height: 1;
+  color: var(--ink-faint); background: rgba(255,255,255,.04);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.drawer-close:hover { color: var(--ink); border-color: rgba(89,224,255,.5); }
+
+@media (max-width: 860px) {
+  .drawer-rail { top: calc(58px + var(--safe-t)); left: calc(8px + var(--safe-l)); gap: 5px; }
+  .drawer-btn { min-height: 30px; padding: 0 10px 0 8px; }
+  .drawer-btn .tx i { display: none; }
+  /* an open drawer is a sheet over the world on a phone */
+  .panel.drawer-panel.open {
+    z-index: 9; box-shadow: 0 24px 60px rgba(0,0,0,.6);
+  }
+  .drawer-scrim { background: rgba(2,5,10,.55); }
+}
+@media (max-height: 460px) and (orientation: landscape) {
+  .drawer-rail { top: calc(52px + var(--safe-t)); flex-direction: row; }
+  .drawer-btn .tx i { display: none; }
+}
+
+/* ---------- planet surface (away mission) ---------- */
+.planet-ui .vitals { background: none; border: 0; padding: 0; }
+.planet-banner {
+  position: absolute; top: calc(74px + var(--safe-t)); right: calc(12px + var(--safe-r));
+  text-align: right; pointer-events: none;
+}
+.pb-name {
+  font-family: var(--font-h); font-size: 20px; letter-spacing: .18em; text-transform: uppercase;
+  color: #fff; text-shadow: 0 2px 18px rgba(0,0,0,.75), 0 0 26px rgba(89,224,255,.35);
+}
+.pb-sub { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: rgba(230,245,255,.72); text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+
+.planet-actions {
+  position: absolute; right: calc(16px + var(--safe-r)); bottom: calc(20px + var(--safe-b));
+  display: flex; gap: 10px; align-items: flex-end; pointer-events: auto;
+}
+.act-btn.land { border-color: rgba(98,242,166,.35); }
+.act-btn.land .ico { color: var(--green); }
+.act-btn.land.dim { opacity: .45; }
+.act-btn.land.ready { box-shadow: 0 0 0 1px rgba(98,242,166,.55), 0 0 18px rgba(98,242,166,.25); }
+.act-btn.talk .ico { color: var(--cyan); }
+.act-btn.leave { border-color: rgba(255,179,71,.4); }
+.act-btn.leave .ico { color: var(--amber); }
+.act-btn.ready { border-color: rgba(98,242,166,.6); }
+
+.planet-prompt {
+  position: absolute; left: 50%; bottom: calc(34px + var(--safe-b)); transform: translateX(-50%);
+  padding: 8px 16px; border-radius: 10px; white-space: nowrap;
+  font-size: 11.5px; letter-spacing: .08em; color: var(--ink-dim);
+  background: rgba(6,12,22,.72); border: 1px solid var(--line); backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.planet-prompt b { color: var(--cyan); }
+
+.away-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 0;
+  border-bottom: 1px solid rgba(120,170,210,.08); font-size: 12px;
+}
+.away-row .dot { font-size: 9px; color: var(--cyan); }
+.away-row .nm { flex: 1; color: var(--ink); }
+.away-row .role { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+.away-row.unknown .nm { color: var(--ink-faint); font-style: italic; }
+
+.landing-hero { display: flex; gap: 14px; align-items: center; }
+.landing-orb {
+  width: 74px; height: 74px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: inset -9px -7px 18px rgba(0,0,0,.7), 0 0 26px rgba(89,224,255,.22);
+}
+
+/* the away team's own label style, reused by globe-labels */
+.planet-ui .globe-labels { position: absolute; inset: 0; pointer-events: none; }
+.planet-ui .globe-label.near { color: var(--green); }
+
+@media (max-width: 860px) {
+  .planet-banner { top: calc(58px + var(--safe-t)); }
+  .pb-name { font-size: 15px; }
+  .planet-actions { gap: 8px; right: calc(10px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); }
+  .planet-prompt { font-size: 10.5px; bottom: calc(92px + var(--safe-b)); max-width: 92vw; white-space: normal; text-align: center; }
+}
