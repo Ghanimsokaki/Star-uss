@@ -1,0 +1,101 @@
+/* Hull viewer — deliberately plainer than the game UI: the model is the subject. */
+@import '@fontsource/orbitron/500.css';
+@import '@fontsource/rajdhani/400.css';
+@import '@fontsource/rajdhani/600.css';
+
+:root {
+  --bg: #05070e;
+  --ink: #eaf6ff;
+  --ink-dim: #9fb4c8;
+  --ink-faint: #6d8296;
+  --cyan: #59e0ff;
+  --amber: #ffb347;
+  --green: #62f2a6;
+  --red: #ff5a4a;
+  --line: rgba(120, 170, 210, .22);
+  --font: 'Rajdhani', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font);
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+#viewer-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+/* ---------- top bar ---------- */
+.viewer-bar {
+  position: fixed; z-index: 10;
+  top: 10px; left: 10px; right: 10px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(9, 18, 32, .92), rgba(6, 12, 22, .72));
+  border: 1px solid var(--line); backdrop-filter: blur(14px);
+}
+.vb-brand { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }
+.vb-brand b { font-size: 11px; letter-spacing: .22em; color: var(--cyan); }
+.vb-brand span { font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw; }
+
+.vb-stats { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; min-width: 0; }
+.st {
+  font-size: 11px; color: var(--ink-dim); letter-spacing: .04em;
+  padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .05); white-space: nowrap;
+}
+.st b { color: var(--ink); font-weight: 600; }
+.st.green b { color: var(--green); }
+.st.amber b { color: var(--amber); }
+.st.red b { color: var(--red); }
+
+.vb-actions { display: flex; gap: 6px; }
+.vb-actions button {
+  font-family: var(--font); font-size: 10px; letter-spacing: .14em;
+  padding: 6px 10px; border-radius: 8px; cursor: pointer;
+  color: var(--ink-dim); background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line); transition: .15s;
+}
+.vb-actions button:hover { color: var(--ink); border-color: rgba(89, 224, 255, .45); }
+.vb-actions button.on { color: #04060d; background: var(--cyan); border-color: var(--cyan); }
+
+/* ---------- drop zone ---------- */
+.viewer-drop {
+  position: fixed; inset: 0; z-index: 5;
+  display: grid; place-items: center; padding: 20px;
+  background: radial-gradient(60% 60% at 50% 45%, rgba(9, 20, 34, .55), rgba(3, 6, 12, .88));
+  cursor: pointer; transition: opacity .25s, background .2s;
+}
+.viewer-drop.hot { background: radial-gradient(60% 60% at 50% 45%, rgba(20, 60, 90, .7), rgba(3, 6, 12, .92)); }
+.viewer-drop.hot .vd-ico { transform: scale(1.15); }
+.vd-inner { max-width: 460px; text-align: center; }
+.vd-ico { font-size: 34px; color: var(--cyan); opacity: .8; margin-bottom: 6px; transition: transform .2s; }
+.vd-inner h1 { font-size: 20px; letter-spacing: .12em; margin: 0 0 8px; }
+.vd-inner p { color: var(--ink-dim); font-size: 13.5px; line-height: 1.55; margin: 0 0 16px; }
+.vd-btn {
+  display: inline-block; padding: 11px 22px; border-radius: 10px;
+  background: var(--cyan); color: #04060d; font-weight: 600; letter-spacing: .1em; font-size: 12px;
+}
+.vd-inner small { display: block; margin-top: 10px; color: var(--ink-faint); font-size: 11px; letter-spacing: .08em; }
+
+/* The drop panel covers the canvas until a model is loaded. */
+.viewer-body.loaded .viewer-drop { display: none; }
+
+.viewer-tip {
+  position: fixed; z-index: 10;
+  left: 10px; right: 10px; bottom: 10px;
+  padding: 8px 12px; border-radius: 10px;
+  font-size: 12px; color: var(--ink-dim); text-align: center;
+  background: rgba(6, 12, 22, .78); border: 1px solid var(--line); backdrop-filter: blur(10px);
+}
+.viewer-tip b { color: var(--cyan); }
+
+@media (max-width: 720px) {
+  .viewer-bar { gap: 8px; padding: 6px 8px; }
+  .vb-brand span { max-width: 44vw; }
+  .vb-actions button { padding: 5px 7px; font-size: 9px; }
+  .st { font-size: 10px; padding: 2px 6px; }
+}

@@ -12,6 +12,7 @@ import { audio } from '../core/audio.js';
 import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 import { applyHelm, bankFor, assistFor } from '../core/helm.js';
+import { FreeCam } from '../core/freecam.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
@@ -124,6 +125,10 @@ export class SystemScene {
     this._schemeOff = null;
     this._modelOff?.();
     this._modelOff = null;
+    this.freecam?.dispose();
+    this.freecam = null;
+    this.app.input.lookLocked = false;
+    this.app.setFreeCam?.(false);
     clearTimeout(this._hintTimer);
     this.ui?.remove();
     this.ui = null;
@@ -351,6 +356,19 @@ export class SystemScene {
       this.player.add(s);
       return s;
     });
+    // free camera: O toggles a detached orbit rig so the hull can be inspected
+    this.freecam?.dispose();
+    this.freecam = new FreeCam(this.app.canvas, {
+      onChange: (on) => {
+        this.app.input.lookLocked = on;
+        // the app owns the global buttons and the "hide every panel" switch
+        this.app.setFreeCam?.(on);
+        if (on) toast('Free camera · drag to orbit, wheel/pinch to zoom, O to exit', 'good', 3200);
+        else toast('Chase camera', 'good', 1600);
+        audio.ui();
+      },
+    });
+
     // a GLB hull lands a frame or two later: move the glow onto its real nacelles
     this._modelOff?.();
     this._modelOff = onModelLoaded((classId, ok) => {
@@ -360,6 +378,11 @@ export class SystemScene {
     this.camDist = Math.max(18, (this.player.userData.length || 6) * 2.6);
     this.camera.position.copy(this.player.position).add(V(0, 6, -this.camDist));
     this.camera.lookAt(this.player.position);
+  }
+
+  /** Flip between the chase rig and the detached orbit camera (button + O key). */
+  toggleFreeCam() {
+    return this.freecam?.toggle() ?? false;
   }
 
   /** Put the engine glow sprites at the current hull's thruster anchors. */
@@ -461,7 +484,8 @@ export class SystemScene {
             <span><b>Q</b> target</span><span class="sep"></span>
             <span><b>T</b> warp</span><span class="sep"></span>
             <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
-            <span><b>X</b> brake</span>
+            <span><b>X</b> brake</span><span class="sep"></span>
+            <span><b>O</b> camera</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
           <div class="throttle-ui" id="throttle-ui">
@@ -514,7 +538,7 @@ export class SystemScene {
     hint.hidden = !touch;
     if (!touch) return;
     hint.textContent = device.form === 'tablet'
-      ? 'Drag anywhere to steer · tap a target to lock it on'
+      ? 'Drag anywhere to steer · tap a target to lock it on · CAM orbits the hull'
       : 'Drag to steer · tap to lock · buttons fire';
     hint.classList.remove('fade');
     clearTimeout(this._hintTimer);
@@ -663,17 +687,24 @@ export class SystemScene {
       });
     }
 
-    // camera chase
-    const camGoal = this.player.position.clone()
-      .add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(3.2))
-      .add(forward.clone().multiplyScalar(-this.camDist));
-    this.camera.position.lerp(camGoal, 1 - Math.exp(-6 * dt));
-    const look = this.player.position.clone().add(forward.clone().multiplyScalar(32));
-    this.camera.lookAt(look);
-    if (this.shake > 0.001) {
-      this.camera.position.x += (Math.random() - 0.5) * this.shake * 1.4;
-      this.camera.position.y += (Math.random() - 0.5) * this.shake * 1.4;
-      this.shake = damp(this.shake, 0, 5, dt);
+    // camera: a detached orbit rig when the player is inspecting the hull,
+    // otherwise the usual chase rig sitting behind the nose
+    if (this.freecam?.active) {
+      this.freecam.update(dt, this.camera, this.player.position, this.player.userData.length || 6);
+      // keep the shake from being lost while detached — it reads as hull impact
+      if (this.shake > 0.001) this.shake = damp(this.shake, 0, 5, dt);
+    } else {
+      const camGoal = this.player.position.clone()
+        .add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(3.2))
+        .add(forward.clone().multiplyScalar(-this.camDist));
+      this.camera.position.lerp(camGoal, 1 - Math.exp(-6 * dt));
+      const look = this.player.position.clone().add(forward.clone().multiplyScalar(32));
+      this.camera.lookAt(look);
+      if (this.shake > 0.001) {
+        this.camera.position.x += (Math.random() - 0.5) * this.shake * 1.4;
+        this.camera.position.y += (Math.random() - 0.5) * this.shake * 1.4;
+        this.shake = damp(this.shake, 0, 5, dt);
+      }
     }
     const fovTarget = 58 + (boosting ? 8 : 0);
     this.camera.fov = damp(this.camera.fov, fovTarget, 3, dt);
@@ -699,6 +730,7 @@ export class SystemScene {
     const autoFire = this.game.state.settings.autoFire;
     if ((input.actions.fire || autoFire) && this.fireCd <= 0) this._firePhasers();
     if (input.actions.torpedo && this.torpCd <= 0) this._fireTorpedo();
+    if (input.consume('cam')) this.freecam?.toggle();
     if (input.consume('ability')) this._useAbility();
     if (input.consume('scan')) this._scanAction();
     if (input.consume('target')) this._cycleTarget();

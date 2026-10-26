@@ -203,6 +203,27 @@ For that, `npm run dev` and look at the hangar.
 | long first load on mobile | heavy textures | 2K textures, medium poly, < 15 MB |
 | model appears huge / tiny | irrelevant — auto-fit | only use `scale` for artistic trim |
 
+### Look at the hull first: `/viewer.html`
+
+Before a model goes anywhere near `public/models/`, open the viewer page and
+drop the file in:
+
+```bash
+npm run dev
+# then open http://localhost:5173/viewer.html
+```
+
+It takes `.fbx`, `.glb` and `.gltf`, renders the hull with an orbit camera (drag
+to orbit, wheel to zoom), and prints the numbers that decide whether it is
+game-ready: triangle count (colour-coded — amber over 120k, red over 200k),
+mesh count, texture count, file size, bounding box, and **which axis the hull is
+longest on**. The **NOSE** button looks down +Z, so you can see at a glance
+whether the ship will fly forwards or sideways. Nothing is uploaded and the page
+never touches your save file.
+
+`/viewer.html?model=/models/galaxy.glb` opens straight onto a hull, which is
+handy for comparing two exports side by side.
+
 Fastest loop: `npm run dev`, console open, drop the file in, read the
 `[models]` line vite prints, tune with `setOverride`, then write the winning
 values into `models.config.json`.
@@ -252,6 +273,7 @@ for glTF/GLB directly.
 | `src/art/imported.js` | manifest fetch, GLTFLoader + Draco cache, normalisation, material prep, hot-swap, overrides |
 | `scripts/scan-models.mjs` | folder → manifest, alias table, config merge |
 | `scripts/check-model.mjs` | dependency-free GLB inspector (`npm run models:check`) |
+| `viewer.html` + `src/viewer.js` | **in-browser hull viewer** — drag an FBX/GLB in and inspect it (`/viewer.html`) |
 | `public/models/` | your exports + the generated `manifest.json` |
 | `public/draco/` | decoder for Draco-compressed exports |
 | `models.config.json` | optional per-class overrides |

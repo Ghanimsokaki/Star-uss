@@ -57,7 +57,7 @@ export function newGameState(seed = 'alpha') {
     stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
     // autoFire is OFF: the weapons are the player's to pull. It stays a settings
     // toggle for anyone who wants the old hands-free behaviour.
-    settings: { quality: 'auto', muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto' },
+    settings: { quality: 'auto', muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto', hudHidden: false },
     flags: { blackholeEntered: false, bossDefeated: false, introSeen: false, capitalPlaced: true },
     log: [],
   };

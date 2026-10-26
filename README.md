@@ -39,6 +39,8 @@ on the fly too.
 | Weapons assist | `V` toggles | Settings |
 | Shipyard / Earth / Galaxy / Missions | `H` / `J` / `G` / `M` | top bar |
 | Close dialog | `Esc` | tap outside |
+| **Free camera** | **`O`** or the **◎ CAM** button | **◎ CAM** button |
+| **Hide every panel** | **`U`** or **❑ HIDE UI** | **❑ HIDE UI** |
 | Gamepad | left stick steers · RT fire · LT torpedo · A ability · B target · X scan · Y warp · d-pad throttle | — |
 
 The helm is fly-by-wire: steering is smoothed, the mouse has a generous centre dead zone, and **weapons assist**
@@ -47,6 +49,20 @@ assist is 35% stronger because a thumb is less precise than a mouse.
 
 **Weapons are manual.** `D` and the cursor both turn the ship the way you point them, and phasers only fire while
 you hold the trigger — the old hands-free *Auto-fire* mode is off by default and lives in Settings if you want it back.
+
+### Looking at the ship
+
+Two buttons sit at the top of the screen, on every screen, above the panels:
+
+- **◎ CAM** (or `O`) detaches the camera. Drag to orbit the hull from any angle, wheel or pinch to zoom,
+  double-click to snap back to the beauty shot, `O` again to return to the chase camera. Leave it alone for a
+  second and it slowly circles the ship on its own. The ship keeps flying and firing throughout, and the orbit
+  gesture never leaks into the guns. Entering free cam hides the panels automatically; leaving it restores
+  whatever you had before.
+- **❑ HIDE UI** (or `U`) hides every panel in every scene — HUD, top bar, side panels — for a clean view.
+  The button itself stays on screen so you can always bring it back, and the choice is remembered between sessions.
+
+The shipyard already has an orbit rig, so a hull can be inspected up close there too.
 
 ---
 
@@ -110,6 +126,11 @@ npm run dev                                           # manifest rebuilds, hull 
 Every class id, its dimensions and which hulls still need a mesh:
 **[docs/SHIP-MODEL-LIST.md](docs/SHIP-MODEL-LIST.md)**.
 
+Before converting anything, open **`/viewer.html`** (`npm run dev` → 
+<http://localhost:5173/viewer.html>) and drag the FBX straight in: it renders the
+hull with an orbit camera and reports triangles, textures, size and which way the
+nose points — no upload, no save file touched.
+
 Three hulls already ship as imported models — the Odyssey-class Enterprise-F,
 the Galaxy-class Enterprise-D and the Saber-class frigate — and the rest keep
 their procedural hull as the instant first frame and as the fallback if a file
@@ -136,7 +157,7 @@ tests/                   node:test suites for helm direction and the deploy cont
 src/main.js              App: viewport + input + scene registry, chrome, warp overlay, RAF loop
 src/style.css            LCARS-flavoured glass UI, responsive + touch layouts
 src/game.js              Game state machine: economy, ships, research, travel, missions, save/load
-src/core/                util, device detection, input (mouse/keyboard/touch/gamepad), helm maths, audio, Viewport
+src/core/                util, device detection, input (mouse/keyboard/touch/gamepad), helm maths, free camera, audio, Viewport
 src/data/                ships, enemies, galaxy, tech/districts/codex, missions/ranks
 src/art/                 procedural textures, ship & enemy builders, environment, Earth, black hole
 src/ui/                  DOM toolkit + menus (codex, handbook, settings, mission log, rank-up)

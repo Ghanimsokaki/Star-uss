@@ -49,6 +49,11 @@ export default defineConfig({
     target: 'es2020',
     chunkSizeWarningLimit: 1400,
     rollupOptions: {
+      input: {
+        main: path.resolve(root, 'index.html'),
+        viewer: path.resolve(root, 'viewer.html'),
+      },
+      // two pages: the game, and the standalone hull viewer used while authoring
       output: {
         manualChunks: {
           three: ['three'],

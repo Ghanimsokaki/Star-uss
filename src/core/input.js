@@ -31,6 +31,8 @@ export class Input {
     this.drag = { id: null, x: 0, y: 0, sx: 0, sy: 0, t0: 0, moved: false };
     this.throttleRate = 0;
     this.enabled = true;
+    // set while a detached camera is being dragged: the cursor must not steer
+    this.lookLocked = false;
     this.touchMode = isTouchScheme();
     this.scheme = device.scheme;
     this.gamepadIndex = null;
@@ -72,6 +74,7 @@ export class Input {
       if (k === 'x') this._press('brake');
       if (k === 't') this._press('warp');
       if (k === 'v') this._press('assist');
+      if (k === 'o') this._press('cam');
       if (k === 'h') this._press('help');
       if (k === 'p') this._press('pause');
     });
@@ -88,7 +91,7 @@ export class Input {
     /* ---------------------------------------------------------------- mouse */
     const onMove = (e) => {
       if (e.pointerType && e.pointerType !== 'mouse') return;   // thumbs use the drag path
-      if (this.scheme !== 'pointer') return;
+      if (this.scheme !== 'pointer' || this.lookLocked) return;
       if (e.target !== this.canvas && e.target?.tagName !== 'CANVAS') return;
       const r = this.canvas.getBoundingClientRect();
       this.ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
@@ -323,7 +326,7 @@ export class Input {
     } else if (this.stick.active) {
       mx = this.stick.x;
       my = this.stick.y;
-    } else if (this.mouseActive && this.mouseIdle < 2.4 && this.scheme === 'pointer') {
+    } else if (this.mouseActive && !this.lookLocked && this.mouseIdle < 2.4 && this.scheme === 'pointer') {
       // generous dead zone in the middle, exponential authority toward the edges
       const dead = 0.14;
       const dz = (v) => (Math.abs(v) < dead ? 0 : (Math.abs(v) - dead) / (1 - dead));

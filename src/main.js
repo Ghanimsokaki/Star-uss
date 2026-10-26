@@ -39,11 +39,98 @@ class App {
     this.time = 0;
     this._hudTimer = 0;
     this._chromeShown = false;
+    this.uiHidden = false;
+    this.freeCamOn = false;
+    this._uiBeforeFreeCam = null;
 
     this.viewport.autoQuality();
+    this._buildViewControls();
     this._bindGlobal();
     this._bindContextLoss();
     this._bootSequence();
+  }
+
+  /**
+   * The two buttons that control what the screen shows: the detached camera and
+   * a switch that hides every panel. They live on <body>, not inside a scene, so
+   * they stay reachable while the HUD is hidden — otherwise hiding the UI would
+   * hide the only way to bring it back.
+   */
+  _buildViewControls() {
+    this.viewControls = el(`
+      <div class="view-controls" id="view-controls">
+        <button class="vc-btn cam-btn" id="cam-btn" type="button" aria-pressed="false"
+                title="Free camera — orbit the ship (O). Drag to orbit, wheel/pinch to zoom.">
+          <span class="ico">◎</span><span class="lbl">CAM</span>
+        </button>
+        <button class="vc-btn ui-btn" id="ui-toggle" type="button" aria-pressed="false"
+                title="Hide every panel for a clean view (U)">
+          <span class="ico">❑</span><span class="lbl">HIDE UI</span>
+        </button>
+      </div>`);
+    document.body.appendChild(this.viewControls);
+    this.viewControls.hidden = true;
+
+    this.viewControls.querySelector('#cam-btn').addEventListener('click', () => {
+      audio.ui();
+      // the scene owns the rig; ask it to toggle so button and key agree
+      this.current?.toggleFreeCam?.();
+    });
+    this.viewControls.querySelector('#ui-toggle').addEventListener('click', () => {
+      audio.ui();
+      this.setUiHidden(!this.uiHidden);
+    });
+
+    // restore the last choice from the save
+    if (game.state.settings.hudHidden) this.setUiHidden(true, { persist: false });
+    this._syncViewControls();
+  }
+
+  /** Hide (or show) every panel, keeping the two view buttons reachable. */
+  setUiHidden(on, { persist = true } = {}) {
+    this.uiHidden = !!on;
+    document.body.classList.toggle('ui-hidden', this.uiHidden);
+    if (persist) {
+      game.state.settings.hudHidden = this.uiHidden;
+      game.save();
+    }
+    this._syncViewControls();
+    return this.uiHidden;
+  }
+
+  /** Called by the flight scene when its orbit rig turns on or off. */
+  setFreeCam(on) {
+    this.freeCamOn = !!on;
+    document.body.classList.toggle('free-cam', this.freeCamOn);
+    if (this.freeCamOn) {
+      // a clean screen is the whole point of inspecting a hull
+      this._uiBeforeFreeCam = this.uiHidden;
+      if (!this.uiHidden) this.setUiHidden(true);
+    } else if (this._uiBeforeFreeCam === false) {
+      this.setUiHidden(false);
+    }
+    this._uiBeforeFreeCam = null;
+    this._syncViewControls();
+  }
+
+  _syncViewControls() {
+    const vc = this.viewControls;
+    if (!vc) return;
+    const playing = this.currentName && this.currentName !== 'title';
+    vc.hidden = !playing;
+    const cam = vc.querySelector('#cam-btn');
+    cam.hidden = this.currentName !== 'system';
+    cam.classList.toggle('on', this.freeCamOn);
+    cam.setAttribute('aria-pressed', String(this.freeCamOn));
+    const lbl = cam.querySelector('.lbl');
+    lbl.textContent = this.freeCamOn ? 'CAM ON' : 'CAM';
+    const ui = vc.querySelector('#ui-toggle');
+    ui.classList.toggle('on', this.uiHidden);
+    ui.setAttribute('aria-pressed', String(this.uiHidden));
+    ui.querySelector('.lbl').textContent = this.uiHidden ? 'SHOW UI' : 'HIDE UI';
+    ui.title = this.uiHidden
+      ? 'Bring every panel back (U)'
+      : 'Hide every panel for a clean view (U)';
   }
 
   _bindContextLoss() {
@@ -163,12 +250,14 @@ class App {
     const bar = buildTopbar(game, active, (id) => this.navigate(id));
     this._chromeShown = true;
     updateTopbar(game);
+    this._syncViewControls();
     return bar;
   }
 
   _hideChrome() {
     document.querySelectorAll('.topbar').forEach((n) => n.remove());
     this._chromeShown = false;
+    this._syncViewControls();
   }
 
   applyQuality(q) {
@@ -196,6 +285,11 @@ class App {
       if (e.key.toLowerCase() === 'j' && this.currentName !== 'title') this.navigate('earth');
       if (e.key.toLowerCase() === 'g' && this.currentName !== 'title') this.navigate('galaxy');
       if (e.key.toLowerCase() === 'h' && this.currentName !== 'title') this.navigate('hangar');
+      if (e.key.toLowerCase() === 'u' && this.currentName !== 'title') {
+        if (hasModal()) return;          // typing/reading a dialog: leave the layout alone
+        audio.ui();
+        this.setUiHidden(!this.uiHidden);
+      }
     });
 
     window.addEventListener('resize', () => this.current?.resize?.(window.innerWidth, window.innerHeight));
