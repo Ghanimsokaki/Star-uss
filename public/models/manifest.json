@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-10-25T00:58:55.209Z",
+  "models": {
+    "galaxy": {
+      "file": "galaxy.glb",
+      "bytes": 5586392
+    },
+    "odyssey": {
+      "file": "odyssey.glb",
+      "bytes": 11482368,
+      "facing": "back"
+    },
+    "saber": {
+      "file": "saber.glb",
+      "bytes": 2667644,
+      "facing": "back"
+    }
+  }
+}
