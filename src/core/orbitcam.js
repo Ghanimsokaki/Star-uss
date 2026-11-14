@@ -62,7 +62,9 @@ export function wheelKind(e) {
   if (Math.abs(e.deltaX) > 0.5) return 'swipe';
   if (e.wheelDeltaY && Math.abs(e.wheelDeltaY) === Math.abs(e.deltaY) * 3) return 'swipe';
   if (!Number.isInteger(e.deltaY)) return 'swipe';
-  return Math.abs(e.deltaY) >= 50 ? 'wheel' : 'swipe';
+  // small integer deltas with no horizontal travel are ambiguous (high-res or
+  // free-spin mouse wheels send them too): treat them as a wheel, i.e. zoom
+  return 'wheel';
 }
 
 export class OrbitChase {

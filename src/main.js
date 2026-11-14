@@ -351,6 +351,9 @@ class App {
       initCloud();
       setInterval(() => {
         if (this.currentName === 'title' || !cloudUser()) return;
+        // only upload when something was saved since the last push
+        if ((game.state.lastSave || 0) <= (this._cloudPushedAt || 0)) return;
+        this._cloudPushedAt = Date.now();
         pushSave(game.state).then((r) => { if (!r.ok) console.warn('[cloud]', r.why); });
         pushScore(game, cloudUser().user_metadata?.captain);
       }, 120000);

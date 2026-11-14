@@ -672,7 +672,11 @@ export class SystemScene {
     }
     // --- autopilot: P / the AUTO button. Any manual stick, key or thrust takes over.
     if (input.consume('autopilot')) this._toggleAutopilot();
-    const manual = Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25 || input.thrust !== 0 || input.lift !== 0;
+    // manual = a key, stick, thumb or a mouse that is MOVING — a cursor merely
+    // resting off-centre (e.g. on the AUTO button) must not cancel autopilot
+    const k = input.keys;
+    const steering = ['a', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].some((x) => k.has(x)) || input.stick.active || (input.mouseActive && input.mouseIdle < 0.15 && (Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25));
+    const manual = steering || input.thrust !== 0 || input.lift !== 0;
     let ap = null;
     if (this.autopilot) {
       if (manual) this._toggleAutopilot(false, 'Manual control');

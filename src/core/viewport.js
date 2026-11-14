@@ -45,7 +45,6 @@ export class PerfGovernor {
     this._ceiling = 0;     // best level known to hold, lower index = better
     this._ceilingUntil = 0;
     this._raisedAt = -1;
-    this._refresh = TARGET_FPS;
   }
 
   get rung() { return PERF_LADDER[this.level]; }
@@ -59,9 +58,9 @@ export class PerfGovernor {
     this.fps = this._frames / this._acc;
     this._frames = 0;
     this._acc = 0;
-    // learn the display's refresh: a 50 Hz or 48 Hz panel can never show 60
-    const goal = Math.min(TARGET_FPS, Math.max(this._refresh, this.fps)) * 0.92;
-    this._refresh = Math.max(30, Math.min(TARGET_FPS, Math.max(this._refresh * 0.98, this.fps)));
+    // Goal is fixed at ~55 fps. (It used to "learn" the refresh rate from the
+    // measured fps, which on a slow device just taught it to accept 30.)
+    const goal = TARGET_FPS * 0.92;
     if (!this.enabled) return false;
     const t = this.now() / 1000;
     if (this.fps < goal) {

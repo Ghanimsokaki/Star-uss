@@ -70,7 +70,9 @@ export class Input {
       this.keys.add(k);
       // Flight keys: W/S thrust, A/D turn, Space up, Shift down (read each
       // frame in update()). Weapons moved off Space/Shift to make room.
-      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
+      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+      // Tab cycles targets in flight, but must keep moving focus in menus/dialogs
+      if (k === 'tab' && (!document.activeElement || document.activeElement === document.body || document.activeElement === this.canvas) && !document.querySelector('.modal-layer')) e.preventDefault();
       if (k === 'k') { this._press('fire'); this.actions.fire = true; }
       if (k === 'f') this._press('torpedo');
       if (k === 'b') { this._press('boost'); this.actions.boost = true; }

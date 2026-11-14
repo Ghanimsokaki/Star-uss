@@ -12,6 +12,7 @@
 import { SHIP_CLASSES } from './ships.js';
 
 export const CUSTOM_ID = 'custom';
+export const DRAFT_ID = 'custom-draft';   // the designer's live preview, never owned
 
 export const DESIGN_LIMITS = {
   saucer: [0.8, 1.9],        // primary hull radius
@@ -100,12 +101,12 @@ export function lengthForDesign(raw) {
  * Put the design into SHIP_CLASSES so every scene can build and fly it.
  * Not added to SHIP_ORDER: the canon roster stays as it is.
  */
-export function registerCustomClass(raw) {
-  if (!raw) { delete SHIP_CLASSES[CUSTOM_ID]; return null; }
+export function registerCustomClass(raw, id = CUSTOM_ID) {
+  if (!raw) { delete SHIP_CLASSES[id]; return null; }
   const d = sanitizeDesign(raw);
   const base = statsForDesign(d);
-  SHIP_CLASSES[CUSTOM_ID] = {
-    id: CUSTOM_ID,
+  SHIP_CLASSES[id] = {
+    id,
     timeline: 'prime',
     name: 'Custom Design',
     hullName: d.name,
@@ -124,5 +125,5 @@ export function registerCustomClass(raw) {
     accent: d.glow,
     design: d,
   };
-  return SHIP_CLASSES[CUSTOM_ID];
+  return SHIP_CLASSES[id];
 }

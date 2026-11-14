@@ -8,7 +8,7 @@ import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, NAC
 import { TECHS, TECH_ORDER } from '../data/tech.js';
 import { audio } from '../core/audio.js';
 import { escapeHtml } from '../core/util.js';
-import { CUSTOM_ID, DEFAULT_DESIGN, DESIGN_LIMITS, SAUCER_SHAPES, sanitizeDesign, statsForDesign, registerCustomClass } from '../data/designer.js';
+import { CUSTOM_ID, DRAFT_ID, DEFAULT_DESIGN, DESIGN_LIMITS, SAUCER_SHAPES, sanitizeDesign, statsForDesign, registerCustomClass } from '../data/designer.js';
 
 export class HangarScene {
   constructor(app) {
@@ -140,6 +140,10 @@ export class HangarScene {
 
   _previewRecord() {
     const id = this.previewId;
+    if (id === DRAFT_ID && this._draft) {
+      const d = sanitizeDesign(this._draft);
+      return { levels: { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 }, palette: PALETTES[0].id, nacelle: d.glow, deflector: '#5ab7ff', name: d.name, registry: d.registry, kills: 0 };
+    }
     if (this.game.state.ships[id]) return this.game.state.ships[id];
     const cls = SHIP_CLASSES[id];
     return {
@@ -252,13 +256,13 @@ export class HangarScene {
   }
 
   /* ---------------------------------------------------------------- designer */
-  _openDesigner() {
+  _openDesigner(start = null) {
     audio.ui();
     this.drawers?.close?.();
     this._closeDesigner(false);
-    this._draft = sanitizeDesign(this.game.state.customDesign || DEFAULT_DESIGN);
+    this._draft = sanitizeDesign(start || this.game.state.customDesign || DEFAULT_DESIGN);
     this._prevPreview = this.previewId;
-    this.previewId = CUSTOM_ID;
+    this.previewId = DRAFT_ID;
     const L = DESIGN_LIMITS;
     const slider = (k, label, [lo, hi], step = 0.05) => `
       <label class="dz-row"><span>${label}</span>
@@ -314,7 +318,12 @@ export class HangarScene {
       }));
     });
     D.querySelector('[data-dz-close]').onclick = () => { audio.ui(); this._closeDesigner(true); };
-    D.querySelector('[data-dz-reset]').onclick = () => { this._closeDesigner(false); this.game.state.customDesign ? this._openDesigner() : (this._draft = null, this._openDesigner()); };
+    D.querySelector('[data-dz-reset]').onclick = () => {
+      // back to the stock hull (keeps the name/registry the player typed)
+      const { name, registry } = this._draft;
+      this._closeDesigner(false);
+      this._openDesigner({ ...DEFAULT_DESIGN, name, registry });
+    };
     D.querySelector('[data-dz-buy]').onclick = () => {
       const res = this.game.commissionDesign(this._draft);
       if (!res.ok) { toast(res.why, 'warn'); audio.error?.(); return; }
@@ -329,10 +338,14 @@ export class HangarScene {
   _redesign(textOnly = false) {
     if (!this._designer) return;
     const d = sanitizeDesign(this._draft);
-    registerCustomClass(d);
+    // the draft lives under its own class id so the ship you actually own (and
+    // may be flying) keeps its paid-for stats while you experiment
+    registerCustomClass(d, DRAFT_ID);
     if (!textOnly) {
-      cancelAnimationFrame(this._dzRaf);
-      this._dzRaf = requestAnimationFrame(() => this._buildShip());
+      // a full hull build (greebles + mesh merge) is too heavy for every
+      // slider tick: rebuild once the slider has paused for a moment
+      clearTimeout(this._dzT);
+      this._dzT = setTimeout(() => this._buildShip(), 90);
     }
     this._refreshLabels();
     const st = statsForDesign(d);
@@ -352,14 +365,13 @@ export class HangarScene {
 
   _closeDesigner(rebuild = true, keep = false) {
     if (!this._designer) return;
-    cancelAnimationFrame(this._dzRaf);
+    clearTimeout(this._dzT);
     this._designer.remove();
     this._designer = null;
     this.ui?.classList.remove('designing');
-    // an abandoned draft must not leak into the real class
-    registerCustomClass(this.game.state.customDesign || null);
-    if (!keep) this.previewId = this.game.state.customDesign || this._prevPreview !== CUSTOM_ID ? (this._prevPreview || this.game.state.shipId) : this.game.state.shipId;
-    if (keep) this.previewId = CUSTOM_ID;
+    registerCustomClass(null, DRAFT_ID);
+    if (keep) this.previewId = CUSTOM_ID;                     // just commissioned: show it
+    else this.previewId = this._prevPreview || this.game.state.shipId;
     if (!SHIP_CLASSES[this.previewId]) this.previewId = this.game.state.shipId;
     if (rebuild || keep) { this._buildShip(); this._refreshFleet(); this._refreshTab(); }
   }

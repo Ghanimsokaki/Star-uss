@@ -1533,6 +1533,7 @@ const BUILDERS = {
   crossfield: buildCrossfield,
   constitution3: buildConstitution3,
   custom: buildCustom,
+  'custom-draft': buildCustom,
 };
 
 /** Build a complete starship. Forward is +Z. */
