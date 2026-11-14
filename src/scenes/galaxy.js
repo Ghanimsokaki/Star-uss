@@ -196,7 +196,8 @@ export class GalaxyScene {
           <div class="panel-body scroll" id="sys-detail"></div>
           <div class="panel-foot" id="gal-foot"></div>
         </aside>
-        <div class="globe-hint on" style="opacity:.75">Drag to orbit · scroll / pinch to zoom · tap a star to select</div>
+        <div class="globe-hint on" id="gal-hint" style="opacity:.75">Drag to orbit · scroll / pinch to zoom · tap a star to select</div>
+        <div class="warp-bar" id="warp-bar" hidden></div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
     // panels are drawers: closed by default so the 3D view gets the space
@@ -324,6 +325,8 @@ export class GalaxyScene {
         <p style="margin-top:6px">Event horizon gravity well. Approach within two radii and your hull will be torn apart. Starfleet recommends Singularity Physics research before entry.</p>
       </div>` : ''}`;
 
+    this._refreshWarpBar(sys, current, can, cost);
+
     const foot = $('#gal-foot', this.ui);
     if (current) {
       foot.innerHTML = `<button class="btn primary wide" id="enter-sys">Enter system · Launch</button>`;
@@ -339,6 +342,40 @@ export class GalaxyScene {
         row.addEventListener('dblclick', () => { if (can.ok) this._engage(sys); });
       });
     }
+  }
+
+  /**
+   * The bar at the bottom of the map. The Navigation drawer holds the full
+   * detail, but it is closed by default — without this, tapping a star on a
+   * phone selected it and showed no way to actually go there.
+   */
+  _refreshWarpBar(sys, current, can, cost) {
+    const bar = $('#warp-bar', this.ui);
+    const hint = $('#gal-hint', this.ui);
+    if (!bar) return;
+    const g = this.game;
+    const fi = FACTION_INFO[sys.faction] || FACTION_INFO.neutral;
+    const dist = Math.hypot(sys.x - g.system.x, sys.y - g.system.y);
+    bar.hidden = false;
+    if (hint) hint.hidden = true;
+    bar.innerHTML = `
+      <div class="wb-info">
+        <div class="wb-name">${escapeHtml(sys.name)} ${current ? '<span class="chip green">You are here</span>' : ''}</div>
+        <div class="wb-sub"><span style="color:${fi.color}">${escapeHtml(fi.name)}</span> · ${g.difficultyLabelFor(sys)} threat${current ? '' : ` · ${dist.toFixed(0)} ly · <b class="cyan">${cost} D</b>`}</div>
+        ${!current && !can.ok ? `<div class="wb-why">${escapeHtml(can.why)}</div>` : ''}
+      </div>
+      <div class="wb-actions">
+        <button class="btn ghost sm" data-wb="info" title="Full system details">Details</button>
+        ${current
+          ? '<button class="btn primary" data-wb="launch">🚀 Launch</button>'
+          : `<button class="btn primary" data-wb="warp" ${can.ok ? '' : 'disabled'}>✧ Engage warp</button>`}
+      </div>`;
+    bar.querySelector('[data-wb="launch"]')?.addEventListener('click', () => { audio.confirm(); this.app.setScene('system'); });
+    bar.querySelector('[data-wb="warp"]')?.addEventListener('click', () => this._engage(sys));
+    bar.querySelector('[data-wb="info"]')?.addEventListener('click', () => {
+      audio.ui();
+      this.drawers?.open('right');
+    });
   }
 
   _engage(sys) {

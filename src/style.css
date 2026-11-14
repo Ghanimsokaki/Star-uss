@@ -56,7 +56,10 @@ body {
 #planet-glow.on { opacity: 1; }
 
 #ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
-#ui .pointer, #ui .screen, #ui .panel, button, a, input, select { pointer-events: auto; }
+/* Screens cover the whole view but must let clicks and drags through to the
+   3D canvas underneath; only the real controls on them catch the pointer. */
+#ui .screen { pointer-events: none; }
+#ui .pointer, #ui .panel, #ui .modal-layer, #ui .big-overlay, button, a, input, select, label, textarea { pointer-events: auto; }
 
 /* ---------- scrollbars ---------- */
 .scroll { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(89,224,255,.35) transparent; -webkit-overflow-scrolling: touch; }
@@ -940,4 +943,28 @@ body:has(.big-overlay) .view-controls { display: none; }
 /* short windows: centre the title block instead of pushing its top off-screen */
 @media (max-height: 900px) and (min-width: 821px) {
   .title-screen { align-items: center; overflow-y: auto; padding-top: 24px; padding-bottom: 24px; }
+}
+
+/* ---------- galaxy map: warp bar ----------
+   Always reachable at the bottom of the map, so a tapped star can be warped to
+   without opening the Navigation drawer. */
+.warp-bar {
+  position: absolute; z-index: 7; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + var(--safe-b)); width: min(560px, calc(100vw - 24px));
+  display: flex; align-items: center; gap: 14px; padding: 12px 14px; pointer-events: auto;
+  background: rgba(6,12,22,.86); border: 1px solid rgba(89,224,255,.3); border-radius: 16px;
+  backdrop-filter: blur(14px); box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  animation: toastIn .25s ease both;
+}
+.warp-bar .wb-info { flex: 1; min-width: 0; }
+.warp-bar .wb-name { font-family: var(--font-h); font-size: 14px; letter-spacing: .08em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.warp-bar .wb-name .chip { font-size: 8.5px; padding: 2px 7px; }
+.warp-bar .wb-sub { font-size: 11px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
+.warp-bar .wb-why { font-size: 11px; color: var(--amber); margin-top: 4px; }
+.warp-bar .wb-actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+.warp-bar .btn.primary { min-height: 44px; padding-inline: 18px; }
+@media (max-width: 520px) {
+  .warp-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .warp-bar .wb-actions { justify-content: stretch; }
+  .warp-bar .wb-actions .btn { flex: 1; }
 }

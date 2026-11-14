@@ -83,7 +83,7 @@ test('a drag that orbits the camera cannot also fire the guns', () => {
 
 test('the flight HUD advertises the camera key', () => {
   const sys = read('src/scenes/system.js');
-  assert.match(sys, /<b>O<\/b> camera/, 'the key strip should mention O');
+  assert.match(sys, /<b>O<\/b> (free )?cam/, 'the key strip should mention O');
 });
 
 test('free cam hands the screen back the way it found it', () => {

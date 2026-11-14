@@ -13,6 +13,7 @@ import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
+import { OrbitChase, chaseOffset } from '../core/orbitcam.js';
 import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -134,6 +135,8 @@ export class SystemScene {
     this._modelOff = null;
     this.freecam?.dispose();
     this.freecam = null;
+    this.orbit?.dispose();
+    this.orbit = null;
     this.app.input.lookLocked = false;
     this.app.setFreeCam?.(false);
     clearTimeout(this._hintTimer);
@@ -345,7 +348,19 @@ export class SystemScene {
       disposeObject3D(this.player);
     }
     const g = this.game;
-    this.player = buildShip(g.state.shipId, g.shipRecord, this.quality);
+    // player (flight transform) → bankRig (visual roll only) → hull.
+    // Rolling the whole rig keeps saucer, hull and nacelles together in a turn;
+    // the hull's userData is shared so muzzles, thrusters and length still read
+    // straight off this.player.
+    const hull = buildShip(g.state.shipId, g.shipRecord, this.quality);
+    this.player = new THREE.Group();
+    this.player.name = 'player';
+    this.player.userData = hull.userData;
+    this.bankRig = new THREE.Group();
+    this.bankRig.name = 'bank-rig';
+    this.bankRig.add(hull);
+    this.player.add(this.bankRig);
+    this.hullModel = hull;
     this.player.position.set(-260, 96, 560);
     this.player.lookAt(0, 10, 0);
     this.player.rotateY(-0.28);
@@ -360,8 +375,15 @@ export class SystemScene {
       }));
       s.position.copy(t.pos);
       s.scale.setScalar(2.2);
-      this.player.add(s);
+      this.bankRig.add(s);
       return s;
+    });
+    // look-around chase camera: right-drag (mouse) or right-half drag (touch)
+    this.orbit?.dispose();
+    this.orbit = new OrbitChase(this.app.canvas, {
+      input: this.app.input,
+      isTouch: () => isTouchScheme(),
+      enabled: () => !this.freecam?.active && !this.dead,
     });
     // free camera: O toggles a detached orbit rig so the hull can be inspected
     this.freecam?.dispose();
@@ -496,7 +518,8 @@ export class SystemScene {
             <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
             <span><b>X</b> brake</span><span class="sep"></span>
             <span><b>L</b> land</span><span class="sep"></span>
-            <span><b>O</b> camera</span>
+            <span><b>Right-drag</b> look · <b>wheel</b> zoom · <b>B</b> recenter</span><span class="sep"></span>
+            <span><b>O</b> free cam</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
           <div class="throttle-ui" id="throttle-ui">
@@ -509,7 +532,7 @@ export class SystemScene {
             <button class="thr-btn down" data-action="throttleDown" data-hold="1" title="Less impulse power"><span>▼</span></button>
             <button class="thr-btn brake" data-action="brake" data-hold="0" title="All stop"><span>■</span></button>
           </div>
-          <div class="touch-hint" id="touch-hint">Drag to steer · tap to lock a target</div>
+          <div class="touch-hint" id="touch-hint">Left: drag to steer · Right: drag to look</div>
           <div class="globe-labels" id="obj-labels"></div>
         </div>
       </div>`);
@@ -551,8 +574,8 @@ export class SystemScene {
     hint.hidden = !touch;
     if (!touch) return;
     hint.textContent = device.form === 'tablet'
-      ? 'Drag anywhere to steer · tap a target to lock it on · CAM orbits the hull'
-      : 'Drag to steer · tap to lock · buttons fire';
+      ? 'Left side: drag to steer · Right side: drag to look around · pinch to zoom · double-tap to recenter'
+      : 'Left: drag to steer · Right: drag to look · double-tap recenters';
     hint.classList.remove('fade');
     clearTimeout(this._hintTimer);
     this._hintTimer = setTimeout(() => hint.classList.add('fade'), 7000);
@@ -701,8 +724,7 @@ export class SystemScene {
     }
 
     // player visual roll
-    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, bankFor(steerX), 4, dt);
-    if (this.player.children[0]) this.player.children[0].rotation.z = modelRoll;
+    if (this.bankRig) this.bankRig.rotation.z = damp(this.bankRig.rotation.z, bankFor(steerX), 4, dt);
 
     // engine glow pulsing
     if (this.engineSprites) {
@@ -720,12 +742,16 @@ export class SystemScene {
       // keep the shake from being lost while detached — it reads as hull impact
       if (this.shake > 0.001) this.shake = damp(this.shake, 0, 5, dt);
     } else {
-      const camGoal = this.player.position.clone()
-        .add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(3.2))
-        .add(forward.clone().multiplyScalar(-this.camDist));
-      this.camera.position.lerp(camGoal, 1 - Math.exp(-6 * dt));
-      const look = this.player.position.clone().add(forward.clone().multiplyScalar(32));
-      this.camera.lookAt(look);
+      // chase camera with a player-controlled orbit offset (look around like a
+      // third-person game); with no offset it is the classic behind-the-nose view
+      if (input.consume('recenter')) this.orbit?.recenter();
+      this.orbit?.update(dt);
+      const look0 = this.orbit || { yaw: 0, pitch: 0, zoom: 1 };
+      const { pos: camGoal, amount } = chaseOffset(this.player.position, this.player.quaternion, this.camDist, 3.2, look0);
+      this.camera.position.lerp(camGoal, 1 - Math.exp(-(amount > 0 ? 10 : 6) * dt));
+      const ahead = this.player.position.clone().add(forward.clone().multiplyScalar(32));
+      const atShip = this.player.position.clone().add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(1.2));
+      this.camera.lookAt(ahead.lerp(atShip, amount));
       if (this.shake > 0.001) {
         this.camera.position.x += (Math.random() - 0.5) * this.shake * 1.4;
         this.camera.position.y += (Math.random() - 0.5) * this.shake * 1.4;

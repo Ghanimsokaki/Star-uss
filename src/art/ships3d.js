@@ -4,6 +4,24 @@ import { SHIP_CLASSES, PALETTES } from '../data/ships.js';
 import { tryApplyModel } from './imported.js';
 
 /* ============================================================ geometry tools */
+/** Radius of a bodyLathe() profile at t (0 = aft, 1 = nose). */
+export function latheRadius(t, radius, { front = 0.55, back = 0.55, bulge = 0.2 } = {}) {
+  let r;
+  if (t < 0.5) r = radius * (back + (1 - back) * Math.pow(Math.sin((t / 0.5) * Math.PI * 0.5), 1.6));
+  else r = radius * (front + (1 - front) * Math.pow(Math.cos(((t - 0.5) / 0.5) * Math.PI * 0.5), 1.6));
+  return Math.max(0.0008, r * (1 + bulge * Math.sin(t * Math.PI) * 0.35));
+}
+
+/** Small deterministic PRNG so the same hull always gets the same lit windows. */
+function hashRng(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => {
+    h ^= h << 13; h ^= h >>> 17; h ^= h << 5;
+    return ((h >>> 0) % 10000) / 10000;
+  };
+}
+
 export function bodyLathe(len, radius, opts = {}) {
   const seg = opts.segments || 48;
   const front = opts.front ?? 0.55;      // 0 = pointy, 1 = bluff nose
@@ -78,13 +96,47 @@ export function extrudeProfile(points, depth, bevel = 0.05) {
   return g;
 }
 
+/**
+ * Surface detail: small panels and boxes stuck onto the hull.
+ *
+ * They used to be scattered through a box volume, which left most of them
+ * floating in space next to the ship. Now each one is dropped onto the hull
+ * with a ray (from above or below) and sits half-buried in the plating.
+ * A greeble that finds no hull underneath is simply skipped.
+ */
 export function greeble(group, material, count, box, rng = Math.random) {
   const [w, h, d] = box;
+  group.updateMatrixWorld(true);
+  const targets = [];
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !o.visible) return;
+    const m = o.material;
+    if (!m || m.transparent || m.isMeshBasicMaterial || o.userData.greeble) return;
+    targets.push(o);
+  });
+  if (!targets.length) return;
+  const ray = new THREE.Raycaster();
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const up = new THREE.Vector3(0, 1, 0);
+  const n = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
-    const g = new THREE.BoxGeometry(0.03 + rng() * w * 0.14, 0.02 + rng() * h * 0.5, 0.03 + rng() * d * 0.14);
+    const x = (rng() - 0.5) * w;
+    const z = (rng() - 0.5) * d;
+    const fromTop = rng() < 0.6;
+    const origin = new THREE.Vector3(x, fromTop ? h * 4 + 10 : -h * 4 - 10, z).applyMatrix4(group.matrixWorld);
+    ray.set(origin, new THREE.Vector3(0, fromTop ? -1 : 1, 0).transformDirection(group.matrixWorld));
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit || !hit.face) continue;
+    const sx = 0.04 + rng() * Math.min(0.22, w * 0.06);
+    const sz = 0.04 + rng() * Math.min(0.26, d * 0.06);
+    const sy = 0.015 + rng() * 0.035;
+    const g = new THREE.BoxGeometry(sx, sy, sz);
     const m = new THREE.Mesh(g, material);
-    m.position.set((rng() - 0.5) * w, (rng() - 0.5) * h, (rng() - 0.5) * d);
-    m.rotation.set(rng() * 0.3, rng() * 0.3, rng() * 0.3);
+    m.userData.greeble = true;
+    m.position.copy(hit.point).applyMatrix4(inv);
+    n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).transformDirection(inv);
+    m.quaternion.setFromUnitVectors(up, n);
+    m.rotateY(rng() * 0.4);
     group.add(m);
   }
 }
@@ -191,7 +243,9 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const emblem = new THREE.MeshBasicMaterial({
     map: emblemTexture(), transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -2,
   });
-  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, decal, emblem, palette, nacelleColor, deflectorColor };
+  // lit portholes: warm cabin light, slightly over-bright so bloom picks it up
+  const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(1.25), toneMapped: false });
+  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, decal, emblem, windows, palette, nacelleColor, deflectorColor };
 }
 
 /* ============================================================ builder */
@@ -208,6 +262,7 @@ class ShipBuilder {
     this.thrusters = [];
     this.nacelles = [];
     this.pivots = [];
+    this._rng = hashRng(classId + (record.name || ''));
   }
   mesh(geo, mat, pos = [0, 0, 0], rot = [0, 0, 0], parent = this.group) {
     const m = new THREE.Mesh(geo, mat);
@@ -260,17 +315,79 @@ class ShipBuilder {
     lowerDeck.position.y = -t * 0.35;
     lowerDeck.scale.z = scaleZ;
     g.add(lowerDeck);
+    this.saucerWindows(g, r, t, scaleZ);
     this.group.add(g);
     return g;
   }
 
-  hullBody({ len, r, y = 0, z = 0, front = 0.5, back = 0.5, scaleY = 1, scaleX = 1 }) {
+  hullBody({ len, r, y = 0, z = 0, front = 0.5, back = 0.5, scaleY = 1, scaleX = 1, windows = true }) {
     const geo = bodyLathe(len, r, { segments: this.detail ? 40 : 24, front, back });
     const m = new THREE.Mesh(geo, this.mats.hull);
     m.position.set(0, y, z);
     m.scale.set(scaleX, scaleY, 1);
     this.group.add(m);
+    if (windows) this.hullWindows({ len, r, y, z, front, back, scaleX, scaleY });
     return m;
+  }
+
+  /**
+   * Instanced rows of lit windows. One draw call per call site, so even a big
+   * hull with a few hundred portholes costs next to nothing.
+   * @param {Array<{pos:number[], rotY:number}>} spots
+   */
+  _windowMesh(spots, w, h, parent = this.group) {
+    if (!this.detail || !spots.length) return null;
+    const geo = new THREE.BoxGeometry(w, h, Math.max(0.008, w * 0.25));
+    const mesh = new THREE.InstancedMesh(geo, this.mats.windows, spots.length);
+    const o = new THREE.Object3D();
+    spots.forEach((sp, i) => {
+      o.position.set(...sp.pos);
+      o.rotation.set(0, sp.rotY, 0);
+      o.updateMatrix();
+      mesh.setMatrixAt(i, o.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = 'windows';
+    parent.add(mesh);
+    return mesh;
+  }
+
+  /** Two decks of windows around the saucer rim, with a few dark cabins. */
+  saucerWindows(g, r, t, scaleZ) {
+    const rng = this._rng;
+    const spots = [];
+    const decks = r > 1.2 ? [-0.3, -0.62] : [-0.42];
+    const n = Math.round(r * 46);
+    for (const dy of decks) {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        if (rng() < 0.18) continue;                  // some cabins are dark
+        const R = r * (1.004 + (dy + 0.3) * 0.012);
+        spots.push({ pos: [Math.sin(a) * R, t * dy, Math.cos(a) * R * scaleZ], rotY: a });
+      }
+    }
+    return this._windowMesh(spots, r * 0.034, t * 0.13, g);
+  }
+
+  /** Window rows down both flanks of a lathed hull section. */
+  hullWindows({ len, r, y, z, front, back, scaleX = 1, scaleY = 1 }) {
+    if (r < 0.2) return null;
+    const rng = this._rng;
+    const spots = [];
+    const rows = r > 0.45 ? [0.18, -0.12] : [0.05];
+    const n = Math.max(4, Math.round(len * 5.5));
+    for (const ry of rows) {
+      for (let i = 0; i < n; i++) {
+        const tt = 0.22 + (i / (n - 1)) * 0.56;
+        if (rng() < 0.2) continue;
+        const rad = latheRadius(tt, r, { front, back });
+        const yy = ry * rad;
+        const xx = Math.sqrt(Math.max(0, rad * rad - yy * yy)) * scaleX * 1.012;
+        const zz = z - len / 2 + tt * len;
+        for (const side of [-1, 1]) spots.push({ pos: [side * xx, y + yy * scaleY, zz], rotY: side * Math.PI / 2 });
+      }
+    }
+    return this._windowMesh(spots, 0.05, 0.028);
   }
 
   deflector({ r, y, z, rotY = 0 }) {
@@ -310,13 +427,13 @@ class ShipBuilder {
     pivot.add(body);
 
     // bussard collector at front (+Z)
-    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.86, 22, 12), new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(this.mats.nacelleColor).lerp(new THREE.Color('#ff5a3c'), 0.55),
-      emissive: new THREE.Color('#ff4b2b'), emissiveIntensity: 1.6,
+    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.7, 24, 14), new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color('#ff6a3a'),
+      emissive: new THREE.Color('#e8361a'), emissiveIntensity: 1.25,
       metalness: 0.2, roughness: 0.15, transmission: 0.35, transparent: true, opacity: 0.92, toneMapped: false,
     }));
-    bussard.position.z = len * 0.47;
-    bussard.scale.set(1, 1, 0.9);
+    bussard.position.z = len * 0.45;
+    bussard.scale.set(1, 1, 1.35);
     pivot.add(bussard);
     this.nacelles.push(bussard);
 
