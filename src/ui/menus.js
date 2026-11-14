@@ -492,7 +492,7 @@ function accountSignedIn(app, cloud, u) {
   const g = app.game;
   const captain = u.user_metadata?.captain || 'Captain';
   const m = modal({
-    title: escapeHtml(captain), sub: 'Captain\u2019s Account',
+    title: captain, sub: 'Captain\u2019s Account',
     body: `
       <div class="setting-row"><div><div class="nm">Signed in</div><div class="ds">${escapeHtml(u.email || '')}</div></div><span class="chip green">Cloud sync on</span></div>
       <div class="setting-row"><div><div class="nm">Sync now</div><div class="ds">Upload this device\u2019s progress and leaderboard score</div></div><button class="btn sm" data-sync>Sync</button></div>

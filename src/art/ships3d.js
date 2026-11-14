@@ -279,7 +279,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const accent = new THREE.MeshStandardMaterial({
     color: new THREE.Color(palette.accent),
     emissive: new THREE.Color(palette.accent),
-    emissiveIntensity: 1.8,
+    emissiveIntensity: 1.3,
     metalness: 0.2,
     roughness: 0.3,
     toneMapped: false,
@@ -292,7 +292,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const deflector = new THREE.MeshStandardMaterial({
     color: new THREE.Color(deflectorColor),
     emissive: new THREE.Color(deflectorColor),
-    emissiveIntensity: 2.4,
+    emissiveIntensity: 1.6,
     metalness: 0.1,
     roughness: 0.22,
     toneMapped: false,
@@ -321,7 +321,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
     map: emblemTexture(), transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -2,
   });
   // lit portholes: warm cabin light, slightly over-bright so bloom picks it up
-  const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(1.25), toneMapped: false });
+  const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(0.85), toneMapped: false });
   return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, bussard, decal, emblem, windows, palette, nacelleColor, deflectorColor };
 }
 

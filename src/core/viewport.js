@@ -136,7 +136,12 @@ export class Viewport {
     this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.62, 0.72);
+    // threshold high enough that only lights, engines and stars glow (hulls stay crisp)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.6, 0.82);
+    // bloom is a blur: rendering it at half resolution is visually identical
+    // and cuts its cost by ~75% (it is one of the most expensive passes)
+    const bloomSetSize = this.bloom.setSize.bind(this.bloom);
+    this.bloom.setSize = (w, h) => bloomSetSize(Math.max(2, Math.round(w * 0.5)), Math.max(2, Math.round(h * 0.5)));
     this.composer.addPass(this.bloom);
     this.output = new OutputPass();
     this.composer.addPass(this.output);

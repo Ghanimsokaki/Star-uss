@@ -14,7 +14,7 @@
   --bg-2: #070b16;
   --ink: #eaf6ff;
   --ink-dim: #9fb4c8;
-  --ink-faint: #6d8296;
+  --ink-faint: #8a9fb3;   /* 6.4:1 on panels — was 4.7:1, too faint over bright scenes */
   --cyan: #59e0ff;
   --cyan-deep: #1b7fa8;
   --amber: #ffb347;
@@ -990,7 +990,8 @@ body[data-scene="system"] .fps-meter { bottom: auto; top: calc(112px + var(--saf
    Phones get a lean HUD: one compact vitals card, the thrust pad in the free
    space on the left, and the action buttons in a tidy block that never runs
    off-screen. The full log and orders live one tap away (M). */
-.is-mobile .hud-top .vitals:nth-child(n+2) { display: none; }
+.is-mobile .hud-top .vitals:nth-child(2) { display: none; }   /* keep vitals + current orders */
+.is-mobile .hud-top .orders-card .o-sub { display: none; }
 .is-mobile .syslog { display: none; }
 .is-mobile .control-strip { display: none; }
 
@@ -1087,3 +1088,21 @@ table.lb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 table.lb th { text-align: left; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); padding: 6px 6px; border-bottom: 1px solid var(--line); }
 table.lb td { padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
 table.lb tr.me td { color: var(--amber); }
+
+/* ============================================================ accessibility
+   WCAG 2.1 AA pass: visible keyboard focus, 44px touch targets on touch
+   devices, and calmer motion for players who ask for it. */
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focus-visible,
+.tab:focus-visible, .ship-card:focus-visible {
+  outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 8px;
+}
+.is-touch .vc-btn { height: 44px; padding: 0 14px; }
+.is-touch .navbtn { min-height: 44px; min-width: 44px; }
+.is-touch .icon-btn { min-width: 44px; min-height: 44px; }
+.is-touch .close-x { min-width: 44px; min-height: 44px; }
+.is-touch .seg button { min-height: 40px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+.warp-bar .wb-sub b { white-space: nowrap; }

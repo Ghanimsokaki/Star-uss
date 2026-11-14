@@ -319,7 +319,7 @@ export class HangarScene {
       const res = this.game.commissionDesign(this._draft);
       if (!res.ok) { toast(res.why, 'warn'); audio.error?.(); return; }
       audio.upgrade();
-      toast(`${this._draft.name} commissioned · ${fmtC(res.price)}`, 'good', 3200);
+      toast(`${escapeHtml(sanitizeDesign(this._draft).name)} commissioned · ${fmtC(res.price)}`, 'good', 3200);
       this._closeDesigner(false, true);
     };
     this._redesign();

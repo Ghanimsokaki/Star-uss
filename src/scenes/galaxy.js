@@ -95,7 +95,10 @@ export class GalaxyScene {
       }
 
       // click/hover target sphere (invisible)
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(Math.max(9, size * 1.3), 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+      // material.visible = false: never drawn (it used to cost a draw call per
+      // system at opacity 0) but the raycaster still hits it
+      const hit = new THREE.Mesh(this._hitGeo ||= new THREE.SphereGeometry(1, 12, 8), this._hitMat ||= new THREE.MeshBasicMaterial({ visible: false }));
+      hit.scale.setScalar(Math.max(9, size * 1.3));
       hit.userData.systemId = sys.id;
       g.add(hit);
       g.userData.hit = hit;
@@ -158,10 +161,45 @@ export class GalaxyScene {
     this._buildUI();
     this._refresh();
     this._bindings = [this.game.bus.on('change', () => { this._refresh(); })];
+    this._bindPick();
     audio.startMusic();
   }
 
+  /**
+   * Tap or click a star in the 3D map to select it. (Only the name labels were
+   * clickable before, and most systems have no label.) A drag is an orbit, not
+   * a tap, so the press must end close to where it started.
+   */
+  _bindPick() {
+    const canvas = this.app.canvas;
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    let down = null;
+    const onDown = (e) => { if (e.target === canvas) down = { x: e.clientX, y: e.clientY, t: performance.now() }; };
+    const onUp = (e) => {
+      if (!down || e.target !== canvas) { down = null; return; }
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const quick = performance.now() - down.t < 600;
+      down = null;
+      if (moved > 8 || !quick) return;
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, this.camera);
+      const hits = [...this._nodes.values()].map((n) => n.userData.hit).filter(Boolean);
+      const hit = ray.intersectObjects(hits, false)[0];
+      if (hit?.object.userData.systemId) {
+        audio.ui();
+        this._selectSystem(hit.object.userData.systemId);
+      }
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    this._unpick = () => { canvas.removeEventListener('pointerdown', onDown); window.removeEventListener('pointerup', onUp); };
+  }
+
   exit() {
+    this._unpick?.();
+    this._unpick = null;
     if (this._enterKey) window.removeEventListener('keydown', this._enterKey);
     this._enterKey = null;
     this._bindings?.forEach((off) => off());

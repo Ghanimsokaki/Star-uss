@@ -72,9 +72,17 @@ export function modal({ title = '', sub = '', body = '', footer = '', wide = fal
   };
   const api = { el: m, layer, close };
   modalStack.push(api);
+  // move keyboard focus into the dialog (and back when it closes)
+  const opener = document.activeElement;
+  requestAnimationFrame(() => {
+    const first = m.querySelector('input:not([type=hidden]):not([hidden]), .modal-foot .btn, button');
+    first?.focus?.({ preventScroll: true });
+  });
+  const _close = close;
+  api.close = () => { _close(); try { opener?.focus?.({ preventScroll: true }); } catch { /* gone */ } };
   if (closable) {
-    layer.addEventListener('pointerdown', (e) => { if (e.target === layer) close(); });
-    m.querySelector('[data-close]')?.addEventListener('click', close);
+    layer.addEventListener('pointerdown', (e) => { if (e.target === layer) api.close(); });
+    m.querySelector('[data-close]')?.addEventListener('click', () => api.close());
   }
   return api;
 }

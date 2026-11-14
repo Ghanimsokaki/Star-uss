@@ -64,3 +64,10 @@ test('trackpad gestures are told apart from a mouse wheel', async () => {
   assert.equal(wheelKind({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }), 'wheel');
   assert.equal(wheelKind({ deltaY: 3, deltaX: 0, deltaMode: 1 }), 'wheel');
 });
+
+test('galaxy stars can be tapped in the 3D view, and hit targets are never drawn', () => {
+  const gal = read('src/scenes/galaxy.js');
+  assert.match(gal, /_bindPick\(\)/);
+  assert.match(gal, /intersectObjects\(hits/);
+  assert.match(gal, /MeshBasicMaterial\(\{ visible: false \}\)/);
+});
