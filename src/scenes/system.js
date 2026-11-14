@@ -142,6 +142,9 @@ export class SystemScene {
     this.freecam = null;
     this.orbit?.dispose();
     this.orbit = null;
+    this.loot?.forEach((L) => this.fxRoot.remove(L.g));
+    this.loot = [];
+    this.combo = null;
     this.app.input.lookLocked = false;
     this.app.setFreeCam?.(false);
     clearTimeout(this._hintTimer);
@@ -502,6 +505,7 @@ export class SystemScene {
             </div>
           </div>
 
+          <div class="combo" id="combo" aria-live="polite"></div>
           <div class="crosshair"><div class="c"></div></div>
           <div class="target-reticle" id="reticle"><div class="ring"></div><div class="tl" id="reticle-label">TARGET</div></div>
           <div class="syslog" id="syslog"></div>
@@ -1440,9 +1444,15 @@ export class SystemScene {
       this.shipRoot.remove(enemy.group);
       disposeObject3D(enemy.group);
     }, 60);
-    const reward = this.game.recordKill(enemy.def);
-    this.addLog(`Destroyed ${enemy.def.label || enemy.def.name} · +${fmtC(reward.credits)} +${reward.dilithium}D`, 'good');
-    toast(`+${fmtC(reward.credits)} · +${reward.dilithium} dilithium · +${reward.xp} XP`, 'good');
+    // kill streak: chain kills inside the window for a growing multiplier
+    this.combo = this.combo && this.combo.timer > 0 ? { count: this.combo.count + 1, timer: 10 } : { count: 1, timer: 10 };
+    const mult = 1 + Math.min(this.combo.count - 1, 6) * 0.25;
+    this.game.noteStreak(this.combo.count);
+    const reward = this.game.recordKill(enemy.def, { mult });
+    this.addLog(`Destroyed ${enemy.def.label || enemy.def.name} · +${fmtC(reward.credits)} +${reward.dilithium}D${mult > 1 ? ` · ×${mult} streak` : ''}`, 'good');
+    toast(`+${fmtC(reward.credits)} · +${reward.dilithium} dilithium · +${reward.xp} XP${mult > 1 ? ` · ×${mult}` : ''}`, 'good');
+    this._showCombo();
+    this._spawnLoot(pos, enemy);
     this.fleetKilled++;
     if (this.target === enemy) this.target = null;
     this._refreshMissionLine();
@@ -1561,6 +1571,69 @@ export class SystemScene {
   }
 
   /** Drop out of the sky next to the world we just lifted off from. */
+  /* ------------------------------------------------------------ loot + streaks */
+  _showCombo() {
+    const el2 = this.ui && $('#combo', this.ui);
+    if (!el2) return;
+    const c = this.combo;
+    const on = c && c.timer > 0 && c.count > 1;
+    el2.classList.toggle('on', !!on);
+    if (on) {
+      el2.innerHTML = `<b>×${(1 + Math.min(c.count - 1, 6) * 0.25).toFixed(2).replace(/0$/, '')}</b><span>${c.count} kill streak</span>`;
+      el2.classList.remove('pop'); void el2.offsetWidth; el2.classList.add('pop');
+    }
+  }
+
+  /** Salvage crates: fly through them. Bigger kills drop more, and a rare cache sometimes. */
+  _spawnLoot(pos, enemy) {
+    this.loot ||= [];
+    const big = enemy.kind === 'voidlord' ? 6 : enemy.kind === 'cube' ? 4 : enemy.kind === 'warbird' ? 3 : 1;
+    const n = big + (Math.random() < 0.5 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const rare = Math.random() < 0.08 * big;
+      const kind = rare ? 'rare' : ['credits', 'dilithium', 'research'][Math.floor(Math.random() * 3)];
+      const color = { credits: '#ffb347', dilithium: '#59e0ff', research: '#b47bff', rare: '#62f2a6' }[kind];
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(this._lootGeo ||= new THREE.OctahedronGeometry(0.9, 0),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.6), toneMapped: false }));
+      g.add(core);
+      g.add(glowSprite(color, rare ? 9 : 6, 0.75));
+      g.position.copy(pos);
+      const vel = new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 18);
+      this.fxRoot.add(g);
+      this.loot.push({ g, core, vel, kind, life: 45, rare });
+    }
+  }
+
+  _updateLoot(dt) {
+    if (!this.loot?.length) return;
+    const p = this.player.position;
+    for (const L of this.loot) {
+      if (L.done) continue;
+      L.life -= dt;
+      const to = p.clone().sub(L.g.position);
+      const d = to.length();
+      // tractor beam: crates drift toward the ship once you are close
+      if (d < 45) L.vel.addScaledVector(to.normalize(), (45 - d) * 2.2 * dt);
+      L.vel.multiplyScalar(Math.exp(-0.9 * dt));
+      L.g.position.addScaledVector(L.vel, dt);
+      L.core.rotation.x += dt * 1.6; L.core.rotation.y += dt * 2.1;
+      if (d < 6) {
+        L.done = true;
+        const r = L.kind === 'rare' ? { credits: 2500, dilithium: 40, research: 120, xp: 60 }
+          : L.kind === 'credits' ? { credits: 350 + Math.round(Math.random() * 400) }
+          : L.kind === 'dilithium' ? { dilithium: 8 + Math.round(Math.random() * 10) }
+          : { research: 20 + Math.round(Math.random() * 25) };
+        this.game.collectLoot(r);
+        audio.ui();
+        const bits = [r.credits && `+${fmtC(r.credits)}`, r.dilithium && `+${r.dilithium} D`, r.research && `+${r.research} RP`].filter(Boolean).join(' · ');
+        toast(L.rare ? `Rare cache! ${bits}` : bits, 'good', 1300);
+      }
+      if (L.done || L.life <= 0) { this.fxRoot.remove(L.g); L.core.material.dispose(); L.done = true; }
+    }
+    this.loot = this.loot.filter((L) => !L.done);
+  }
+
   /* ------------------------------------------------------------ physics */
   /** Planets and hostile hulls are solid: bounce off, and hit hard = damage. */
   _collide() {
@@ -1576,7 +1649,7 @@ export class SystemScene {
       const hit = collideSphere(pos, this.vel, e.group.position, (e.radius || 3) * 0.8, shipR, 0.5);
       if (hit > 4) {
         this._impact(hit * 0.6, 'Collision!');
-        if (typeof e.hp === 'number') e.hp -= hit * 0.8;
+        if (typeof e.hp === 'number') { e.hp -= hit * 0.8; if (e.hp <= 0) this._killEnemy(e); }
       }
     }
   }
@@ -2098,6 +2171,11 @@ export class SystemScene {
       this._updateProjectiles(capped);
       this._updateClones(capped);
       this._updateSaucerSection(capped);
+      this._updateLoot(capped);
+      if (this.combo?.timer > 0) {
+        this.combo.timer -= capped;
+        if (this.combo.timer <= 0) this._showCombo();
+      }
       this.lastDamage += capped;
       if (this.lastDamage > 3.5 && this.shield < this.maxShield) {
         this.shield = Math.min(this.maxShield, this.shield + this.stats.regen * capped);

@@ -12,7 +12,7 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
-import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro } from './ui/menus.js';
+import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily } from './ui/menus.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
 import { playWarp } from './ui/warp.js';
@@ -227,6 +227,11 @@ class App {
         this._hideChrome();
       } else {
         this._showChrome(name === 'system' || name === 'planet' ? 'galaxy' : name);
+        // once per day, the first time the player is actually in the game
+        if (!this._dailyChecked) {
+          this._dailyChecked = true;
+          setTimeout(() => { if (!hasModal()) showDaily(game); }, 1200);
+        }
       }
       this.input.consumeAll();
       const el2 = document.querySelector('.screen.active');

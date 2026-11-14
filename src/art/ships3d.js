@@ -1234,6 +1234,75 @@ function buildVengeance(b) {
 }
 
 
+/* ---------------------------------------------------------- player designs */
+/** A strut between two points, as a flattened box. */
+function strut(b, from, to, thick, mat) {
+  const a = new THREE.Vector3(...from), c = new THREE.Vector3(...to);
+  const len = a.distanceTo(c);
+  if (len < 0.01) return null;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(thick, len, thick * 2.6), mat);
+  m.position.copy(a).add(c).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), c.clone().sub(a).normalize());
+  b.add(m);
+  return m;
+}
+
+function buildCustom(b) {
+  const d = b.cls.design || {};
+  const m = b.mats;
+  if (d.hullColor) { m.hull.color.set(d.hullColor); m.trim.color.set(d.hullColor).multiplyScalar(0.45); }
+  const R = d.saucer || 1.4;
+  const scaleZ = d.shape === 'oval' ? 1.3 : d.shape === 'arrow' ? 1.38 : 1;
+  const sy = 0.7;
+  const sz = R * scaleZ * 0.55;
+  b.saucer({ r: R, t: 0.13 + R * 0.05, y: sy, z: sz, scaleZ });
+  if (d.shape === 'arrow') {
+    // a swept bow: two angled plates meeting ahead of the saucer
+    const bow = b.mesh(new THREE.ConeGeometry(R * 0.55, R * 1.1, 3, 1), m.hull, [0, sy - 0.02, sz + R * scaleZ * 0.95], [Math.PI / 2, 0, 0]);
+    bow.scale.set(1, 1, 0.22);
+  }
+  const L = d.hull || 0;
+  const hullZ = sz - R * scaleZ * 0.55 - L * 0.5 + 0.2;
+  const hullY = sy - 0.62;
+  if (L > 0.3) {
+    const r = 0.26 + R * 0.12;
+    b.hullBody({ len: L, r, y: hullY, z: hullZ, front: 0.45, back: 0.65, scaleY: 0.9 });
+    b.deflector({ r: r * 0.7, y: hullY, z: hullZ + L * 0.5 - 0.02 });
+    if (d.neck !== false) {
+      b.pylon([[-0.14, 0], [0.14, 0], [0.22, 0.6], [-0.22, 0.6]], Math.min(0.9, L * 0.3), m.hull, [0, hullY + 0.1, sz - R * 0.35], [0, 0, 0]);
+    }
+    b.torpTube(-0.12, hullY - 0.05, hullZ + L * 0.5 - 0.1);
+    if (L > 1.5) b.torpTube(0.12, hullY - 0.05, hullZ + L * 0.5 - 0.1);
+  } else {
+    b.deflector({ r: 0.24, y: sy - 0.18, z: sz + R * scaleZ * 0.7 });
+    b.torpTube(0, sy - 0.1, sz + R * scaleZ * 0.9);
+  }
+  // nacelles + pylons
+  const nl = d.nacelleLen || 2.6;
+  const span = d.nacelleSpan || 1.4;
+  const ny = sy + (d.nacelleHeight ?? 0.7);
+  const nz = (L > 0.3 ? hullZ - L * 0.2 : sz - R) - nl * 0.15;
+  const anchorY = L > 0.3 ? hullY + 0.1 : sy;
+  const anchorZ = L > 0.3 ? hullZ : sz - R * 0.6;
+  const rows = d.nacelles === 4 ? [ny + 0.45, ny - 0.45] : [ny];
+  for (const y of rows) {
+    for (const side of [-1, 1]) {
+      b.nacelle({ x: side * span, y, z: nz, len: nl, r: 0.17 + nl * 0.012, tilt: side * 0.02 });
+      strut(b, [side * 0.15, anchorY, anchorZ], [side * span, y, nz - nl * 0.1], 0.07, m.hull);
+    }
+  }
+  b.impulse(sy + 0.02, sz - R * scaleZ * 0.92, 2, R * 0.3);
+  const w = d.weapons || 3;
+  for (let i = 0; i < Math.min(4, w); i++) {
+    const side = i % 2 ? 1 : -1;
+    b.phaserBank(side * R * 0.55, sy + 0.12, sz - (i >> 1) * R * 0.5, [0, side * 0.4, 0], 0.7);
+  }
+  b.decalOnSaucer(R * 0.9, 0.13 + R * 0.05, sy, sz);
+  greeble(b.group, m.dark, b.detail ? 22 : 8, [R * 1.8, 1, R * 2 + L]);
+  const length = Math.max(R * 2.2 * scaleZ, R * scaleZ + L + 1, nl + 1);
+  return b.finish({ length: length + 1.6, radius: Math.max(R, span + 0.4) + 0.4 });
+}
+
 /* ---------------------------------------------------------- 24th-c. additions */
 function buildSaber(b) {
   const m = b.mats;
@@ -1463,6 +1532,7 @@ const BUILDERS = {
   ambassador: buildAmbassador,
   crossfield: buildCrossfield,
   constitution3: buildConstitution3,
+  custom: buildCustom,
 };
 
 /** Build a complete starship. Forward is +Z. */

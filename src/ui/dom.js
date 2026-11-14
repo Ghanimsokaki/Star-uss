@@ -122,7 +122,7 @@ export function buildTopbar(game, active, onNav) {
         <div class="stat credits"><i>◈</i><div><span class="v" data-k="credits">0</span><span class="k">credits</span></div></div>
         <div class="stat dil"><i>◆</i><div><span class="v" data-k="dil">0</span><span class="k">dilithium</span></div></div>
         <div class="stat res"><i>✧</i><div><span class="v" data-k="res">0</span><span class="k">research</span></div></div>
-        <div class="stat rank"><i>★</i><div><span class="v" data-k="rank">Ensign</span><span class="k" data-k="ship">Miranda</span></div></div>
+        <div class="stat rank" title="Experience to next promotion"><i>★</i><div><span class="v" data-k="rank">Ensign</span><span class="k" data-k="ship">Miranda</span><span class="xp-bar"><i data-k="xp"></i></span></div></div>
       </div>
       <div class="tb-nav"></div>
     </div>`);
@@ -137,6 +137,7 @@ export function buildTopbar(game, active, onNav) {
     credits: topbarEl.querySelector('[data-k="credits"]'),
     dil: topbarEl.querySelector('[data-k="dil"]'),
     res: topbarEl.querySelector('[data-k="res"]'),
+    xp: topbarEl.querySelector('[data-k="xp"]'),
     rank: topbarEl.querySelector('[data-k="rank"]'),
     ship: topbarEl.querySelector('[data-k="ship"]'),
     civ: topbarEl.querySelector('.tb-brand span'),
@@ -152,6 +153,10 @@ export function updateTopbar(game) {
   refs.dil.textContent = fmt(Math.floor(game.state.dilithium));
   refs.res.textContent = fmt(Math.floor(game.state.research));
   refs.rank.textContent = game.rankTitle;
+  if (refs.xp) {
+    const lo = game.prevRankXp ?? 0, hi = game.nextRank || 1;
+    refs.xp.style.width = `${Math.max(2, Math.min(100, ((game.state.xp - lo) / Math.max(1, hi - lo)) * 100))}%`;
+  }
   refs.ship.textContent = game.shipClass.name.replace('-Class', '');
   refs.civ.textContent = game.state.civ.name;
 }

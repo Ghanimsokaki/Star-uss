@@ -372,3 +372,31 @@ export function showIntro(app) {
   });
   m.el.querySelector('[data-close2]').onclick = () => m.close();
 }
+
+/** Daily login reward: a seven-day streak that resets if you miss a day. */
+export function showDaily(game) {
+  const offer = game.dailyOffer();
+  if (!offer) return null;
+  const days = game.constructor.DAILY.map((r, i) => {
+    const n = i + 1;
+    const state = n < offer.day ? 'got' : n === offer.day ? 'today' : '';
+    const label = [r.credits && fmtC(r.credits), r.dilithium && `${r.dilithium} D`, r.research && `${r.research} RP`].filter(Boolean).join('<br>');
+    return `<div class="daily-day ${state}"><span>Day ${n}</span><b>${label}</b></div>`;
+  }).join('');
+  const m = modal({
+    title: offer.streak > 1 ? `Day ${offer.streak} streak!` : 'Daily supply drop', sub: 'Starfleet Logistics',
+    body: `<p class="dim" style="margin-top:0;line-height:1.6">Report for duty every day to keep the streak going — day seven pays the most.</p>
+      <div class="daily-grid">${days}</div>`,
+    footer: '<button class="btn primary" data-claim>Claim reward</button>',
+  });
+  m.el.querySelector('[data-claim]').onclick = () => {
+    const got = game.claimDaily();
+    if (got) {
+      audio.upgrade();
+      const r = got.reward;
+      toast(`Supply drop: ${[r.credits && fmtC(r.credits), r.dilithium && r.dilithium + ' D', r.research && r.research + ' RP'].filter(Boolean).join(' · ')}`, 'good', 3600);
+    }
+    m.close();
+  };
+  return m;
+}

@@ -1,8 +1,9 @@
 import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_ORDER, MAX_UPGRADE, computeStats, moduleCost, PALETTES } from './data/ships.js';
 import { DISTRICTS, DISTRICT_ORDER, TECHS, districtUpgradeCost } from './data/tech.js';
 import { buildGalaxy, planetById, surveyPlanet, warpCost, PLANET_TYPES } from './data/galaxy.js';
-import { MISSIONS, CONTRACTS, RANK_TITLES, rankFor, nextRankXp } from './data/missions.js';
+import { MISSIONS, CONTRACTS, RANK_TITLES, RANK_XP, rankFor, nextRankXp } from './data/missions.js';
 import { storage, uid, clamp } from './core/util.js';
+import { CUSTOM_ID, registerCustomClass, sanitizeDesign, costForDesign } from './data/designer.js';
 
 const SAVE_KEY = 'startrek.ascension.save.v1';
 const SAVE_VERSION = 5;
@@ -134,6 +135,9 @@ export class Game {
       if (!rec.nacelle) rec.nacelle = PALETTES[0].accent;
       if (!rec.deflector) rec.deflector = '#5ab7ff';
     }
+    // the player's own design must exist as a class before any ship is built
+    if (this.state.customDesign) registerCustomClass(this.state.customDesign);
+    if (this.state.shipId === CUSTOM_ID && !this.state.customDesign) this.state.shipId = 'miranda';
     this.galaxy = buildGalaxy(this.state.seed);
     // offline progression — half rate, capped at six hours
     const away = clamp((Date.now() - (s.lastSave || Date.now())) / 1000, 0, 4 * 3600);
@@ -163,9 +167,41 @@ export class Game {
   }
   reset() {
     storage.del(SAVE_KEY);
+    registerCustomClass(null);
     this.state = newGameState();
     this.galaxy = buildGalaxy(this.state.seed);
     this.bus.emit('change');
+  }
+
+  /* ------------------------------------------------------------ ship designer */
+  /** Price to commission (or refit) a design. Refits pay only the difference, minimum 15%. */
+  designPrice(design) {
+    const full = costForDesign(design);
+    if (!this.state.customDesign) return full;
+    const old = costForDesign(this.state.customDesign);
+    return Math.max(Math.round(full * 0.15 / 100) * 100, full - old);
+  }
+
+  /** Build (or rebuild) the player's own ship and take command of it. */
+  commissionDesign(raw) {
+    const design = sanitizeDesign(raw);
+    const price = this.designPrice(design);
+    if (this.state.credits < price) return { ok: false, why: `Needs ₡${price.toLocaleString()}` };
+    this.state.credits -= price;
+    this.state.customDesign = design;
+    registerCustomClass(design);
+    if (!this.state.ownedShips.includes(CUSTOM_ID)) this.state.ownedShips.push(CUSTOM_ID);
+    const rec = this.state.ships[CUSTOM_ID] || makeShipRecord(CUSTOM_ID);
+    rec.name = design.name;
+    rec.registry = design.registry;
+    rec.nacelle = design.glow;
+    this.state.ships[CUSTOM_ID] = rec;
+    this.state.shipId = CUSTOM_ID;
+    this.state.stats.designs = (this.state.stats.designs || 0) + 1;
+    this.save(true);
+    this.bus.emit('change');
+    this.checkMissions();
+    return { ok: true, price };
   }
 
   /* ------------------------------------------------------------ helpers */
@@ -175,6 +211,7 @@ export class Game {
   get rank() { return rankFor(this.state.xp); }
   get rankTitle() { return RANK_TITLES[this.rank - 1] || 'Ensign'; }
   get nextRank() { return nextRankXp(this.rank); }
+  get prevRankXp() { return RANK_XP[this.rank - 1] || 0; }
   get stats() { return computeStats(this.state.shipId, this.shipRecord.levels, this.techSet); }
   get system() { return this.galaxy.byId[this.state.currentSystemId] || this.galaxy.byId.sol; }
   get sol() { return this.galaxy.byId.sol; }
@@ -599,8 +636,10 @@ export class Game {
     return { ok: true, anomaly, rewards: { ...r, credits } };
   }
 
-  recordKill(enemy) {
-    const r = enemy.reward || { credits: 100, dilithium: 5, xp: 20 };
+  recordKill(enemy, { mult = 1 } = {}) {
+    const base = enemy.reward || { credits: 100, dilithium: 5, xp: 20 };
+    // kill-streak multiplier from the flight scene scales the payout
+    const r = { credits: Math.round(base.credits * mult), dilithium: Math.round(base.dilithium * mult), xp: Math.round(base.xp * mult) };
     this.state.credits += r.credits;
     this.state.dilithium += r.dilithium;
     this.state.stats.creditsEarned += r.credits;
@@ -617,6 +656,57 @@ export class Game {
     this.bus.emit('change');
     this.checkMissions();
     return r;
+  }
+
+  /** Fly-through salvage from destroyed ships. */
+  collectLoot(loot) {
+    const r = { credits: loot.credits || 0, dilithium: loot.dilithium || 0, research: loot.research || 0 };
+    this.state.credits += r.credits;
+    this.state.dilithium += r.dilithium;
+    this.state.research += r.research;
+    this.state.stats.creditsEarned += r.credits;
+    this.state.stats.loot = (this.state.stats.loot || 0) + 1;
+    if (loot.xp) this.addXp(loot.xp);
+    this.scheduleSave();
+    this.bus.emit('change');
+    this.checkMissions();
+    return r;
+  }
+
+  noteStreak(n) {
+    if (n > (this.state.stats.bestStreak || 0)) this.state.stats.bestStreak = n;
+  }
+
+  /* ------------------------------------------------------------ daily reward */
+  static DAILY = [
+    { credits: 1500 }, { credits: 2500, dilithium: 20 }, { credits: 3500, research: 80 },
+    { credits: 5000, dilithium: 40 }, { credits: 6500, research: 160 }, { credits: 8000, dilithium: 70 },
+    { credits: 15000, dilithium: 120, research: 400 },
+  ];
+
+  static _day(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+
+  /** Today's reward if not yet claimed, with the streak it continues. */
+  dailyOffer(now = new Date()) {
+    const d = this.state.daily || {};
+    const today = Game._day(now);
+    if (d.last === today) return null;
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    const streak = d.last === Game._day(y) ? (d.streak || 0) + 1 : 1;
+    const reward = Game.DAILY[(streak - 1) % Game.DAILY.length];
+    return { streak, reward, day: ((streak - 1) % 7) + 1 };
+  }
+
+  claimDaily(now = new Date()) {
+    const offer = this.dailyOffer(now);
+    if (!offer) return null;
+    this.state.daily = { last: Game._day(now), streak: offer.streak };
+    this._payReward(offer.reward);
+    this.state.stats.bestDaily = Math.max(this.state.stats.bestDaily || 0, offer.streak);
+    this.save(true);
+    this.bus.emit('change');
+    this.checkMissions();
+    return offer;
   }
 
   recordClear(systemId) {
