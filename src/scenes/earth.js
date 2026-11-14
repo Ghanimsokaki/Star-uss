@@ -3,6 +3,7 @@ import { initDrawers } from '../ui/drawers.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EarthGlobe, vec3ToLatLon, latLonToVec3, EARTH_RADIUS } from '../art/earth.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
+import { loadGLB } from '../art/imported.js';
 import { el, $, $$, toast, fmtC, fmt, modal } from '../ui/dom.js';
 import { DISTRICT_ORDER, DISTRICTS, districtUpgradeCost } from '../data/tech.js';
 import { audio } from '../core/audio.js';
@@ -69,6 +70,7 @@ export class EarthScene {
     this.controls.autoRotateSpeed = 0.32;
     this.controls.target.set(0, 0, 0);
     this._buildingsShown = false;
+    this._loadISS();
     this._built = true;
   }
 
@@ -176,6 +178,33 @@ export class EarthScene {
 
     this._refreshPanels();
     this._bindGlobeInput();
+  }
+
+  /**
+   * The real International Space Station (NASA 3D Resources, public domain)
+   * in a 51.6° orbit. Skipped on low-end devices — it is 174k triangles.
+   */
+  async _loadISS() {
+    if (this.app.viewport.quality === 'low') return;
+    const { scene } = await loadGLB('/assets/nasa/iss.glb');
+    if (!scene || !this.scene) return;
+    scene.traverse((o) => {
+      if (o.isMesh) {
+        o.material.envMapIntensity = 1.2;
+        if ('metalness' in o.material) o.material.metalness = Math.min(0.8, o.material.metalness ?? 0.5);
+      }
+    });
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3()).length();
+    scene.scale.setScalar(0.9 / size);
+    const pivot = new THREE.Group();
+    pivot.rotation.x = THREE.MathUtils.degToRad(51.6);
+    const holder = new THREE.Group();
+    holder.position.set(EARTH_RADIUS * 1.06, 0, 0);
+    holder.add(scene);
+    pivot.add(holder);
+    this.scene.add(pivot);
+    this.iss = { pivot, holder };
   }
 
   /** Layers, sun, traffic, shield, district hopping and zoom. */
@@ -586,6 +615,12 @@ export class EarthScene {
       if (f.t >= 1) this._flyTo = null;
     }
     this.globe.update(dt, t);
+    if (this.iss) {
+      // one orbit every ~40 s, nose along the velocity
+      this.iss.pivot.rotation.y += dt * 0.155;
+      this.iss.holder.rotation.y = -Math.PI / 2;
+      this.iss.pivot.visible = (this.game.state.settings.globe?.satellites !== false);
+    }
     this.globe.animateMarkers(this.time);
     this.globe.setGhostPulse(this.time);
     this.controls.update();

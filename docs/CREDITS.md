@@ -112,3 +112,21 @@ in `public/assets/earth/`.
 Ship specifications (lengths, crews, armaments, deck counts) in
 `src/data/ships.js` were researched from DITL, Memory Alpha / Memory Beta,
 Trekpedia and the Star Trek Online wiki.
+
+## Photographic space imagery
+
+Planet surfaces (`public/assets/space/*.jpg`, `saturn-ring.png`) and the Milky Way sky
+(`milky-way-2k.jpg`, `milky-way-4k.jpg`) are from **Solar System Scope**
+(<https://www.solarsystemscope.com/textures/>), based on NASA mission data, licensed
+**CC BY 4.0** (<https://creativecommons.org/licenses/by/4.0/>). Changes: re-encoded as
+progressive JPEG at quality 84; the 8k Milky Way was downscaled to 4096×2048. The
+Ceres, Eris, Haumea and Makemake maps are Solar System Scope's own artistic
+("fictional") renderings. Each file was verified byte-for-byte (SHA-256) against the
+official download before re-encoding.
+
+## International Space Station model
+
+`public/assets/nasa/iss.glb` is *International Space Station (ISS) (B)* from
+**NASA 3D Resources** (<https://github.com/nasa/NASA-3D-Resources>). NASA imagery and
+models are generally not subject to copyright in the United States; NASA does not
+endorse this project.

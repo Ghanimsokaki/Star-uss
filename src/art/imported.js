@@ -76,8 +76,13 @@ function makeLoader() {
   const loader = new GLTFLoader();
   // Meshy can export Draco/meshopt-compressed GLBs. three ships its own decoder
   // and resolves it against the bundle, so there is nothing to host by hand.
+  // The decoder is served from /draco/ (copied from three's libs): the default
+  // URL is relative to three's own module, which Vite's dev pre-bundling moves,
+  // so in dev it resolved to index.html and Draco GLBs failed to load.
   try {
-    loader.setDRACOLoader(new DRACOLoader());
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('/draco/');
+    loader.setDRACOLoader(draco);
   } catch { /* decoders optional */ }
   return loader;
 }
