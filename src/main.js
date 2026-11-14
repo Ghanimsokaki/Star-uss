@@ -12,7 +12,8 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
-import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro } from './ui/menus.js';
+import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount } from './ui/menus.js';
+import { cloudConfigured, initCloud, pushSave, pushScore, user as cloudUser } from './core/cloud.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
 import { playWarp } from './ui/warp.js';
@@ -45,6 +46,8 @@ class App {
     this._uiBeforeFreeCam = null;
 
     this.viewport.autoQuality();
+    this.viewport.governor.enabled = game.state.settings.autoPerf !== false;
+    this.setFpsMeter(!!game.state.settings.showFps);
     this._buildViewControls();
     this._bindGlobal();
     this._bindContextLoss();
@@ -225,6 +228,11 @@ class App {
         this._hideChrome();
       } else {
         this._showChrome(name === 'system' || name === 'planet' ? 'galaxy' : name);
+        // once per day, the first time the player is actually in the game
+        if (!this._dailyChecked) {
+          this._dailyChecked = true;
+          setTimeout(() => { if (!hasModal()) showDaily(game); }, 1200);
+        }
       }
       this.input.consumeAll();
       const el2 = document.querySelector('.screen.active');
@@ -241,6 +249,7 @@ class App {
     audio.ui();
     if (id === 'codex') { showCodex(game); return; }
     if (id === 'settings') { showSettings(this); return; }
+    if (id === 'account') { showAccount(this); return; }
     if (id === 'system') { this.setScene('system'); return; }
     if (id === 'planet') { this.setScene('planet', { planetId: game.state.currentPlanetId }); return; }
     if (id === this.currentName) return;
@@ -260,6 +269,17 @@ class App {
     document.querySelectorAll('.topbar').forEach((n) => n.remove());
     this._chromeShown = false;
     this._syncViewControls();
+  }
+
+  /** Replace the running game with a save from elsewhere (the cloud) and restart cleanly. */
+  loadSaveData(data) {
+    if (!data || typeof data !== 'object' || data.credits == null) { toast('That save could not be read', 'bad'); return; }
+    try {
+      game.saveLocked = true;
+      localStorage.setItem('startrek.ascension.save.v1', JSON.stringify(data));
+    } catch (e) { toast('Could not write the save', 'bad'); return; }
+    toast('Cloud save loaded — restarting the bridge…', 'good', 2000);
+    setTimeout(() => window.location.reload(), 900);
   }
 
   applyQuality(q) {
@@ -326,17 +346,59 @@ class App {
       if (this.currentName !== 'title') game.save();
     }, 20000);
 
+    // cloud: restore the session early, then mirror the save every two minutes
+    if (cloudConfigured()) {
+      initCloud();
+      setInterval(() => {
+        if (this.currentName === 'title' || !cloudUser()) return;
+        // only upload when something was saved since the last push
+        if ((game.state.lastSave || 0) <= (this._cloudPushedAt || 0)) return;
+        this._cloudPushedAt = Date.now();
+        pushSave(game.state).then((r) => { if (!r.ok) console.warn('[cloud]', r.why); });
+        pushScore(game, cloudUser().user_metadata?.captain);
+      }, 120000);
+    }
+
     window.addEventListener('error', (e) => {
       console.error(e.error || e.message);
     });
     window.addEventListener('unhandledrejection', (e) => console.error(e.reason));
   }
 
+  /** Small corner read-out (Settings → Show FPS). */
+  setFpsMeter(on) {
+    if (on && !this.fpsEl) {
+      this.fpsEl = el('<div class="fps-meter" aria-hidden="true">— fps</div>');
+      document.body.appendChild(this.fpsEl);
+      this._fpsT = 0;
+    } else if (!on && this.fpsEl) {
+      this.fpsEl.remove();
+      this.fpsEl = null;
+    }
+  }
+
+  _tickFps(dt) {
+    this._fpsT = (this._fpsT || 0) + dt;
+    if (this._fpsT < 0.5) return;
+    this._fpsT = 0;
+    const v = this.viewport;
+    const fps = Math.round(v.fps);
+    this.fpsEl.textContent = `${fps} fps · ${Math.round(v.renderScale * 100)}% res${v.bloom.enabled ? '' : ' · no bloom'}`;
+    this.fpsEl.classList.toggle('bad', fps < 50);
+  }
+
   _startLoop() {
-    const clock = new THREE.Clock();
+    // THREE.Timer replaces the deprecated Clock (it also ignores time spent in
+    // a hidden tab when connected to the document)
+    const clock = new THREE.Timer();
+    clock.connect?.(document);
     const loop = () => {
       requestAnimationFrame(loop);
-      const dt = clamp(clock.getDelta(), 0, 0.1);
+      clock.update();
+      const raw = clock.getDelta();
+      this.viewport.frame(raw);
+      if (this.fpsEl) this._tickFps(raw);
+      const dt = clamp(raw, 0, 0.1);
       this.time += dt;
       try {
         game.tick(dt);

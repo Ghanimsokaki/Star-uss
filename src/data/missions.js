@@ -227,6 +227,7 @@ export const CONTRACTS = [
   { id: 'c-refit', title: 'Fully Refitted', desc: 'Raise every system on one ship to level 3.', reward: { credits: 9000, research: 150 },
     ...count((s) => Math.max(0, ...Object.values(s.ships || {}).map((sh) => Math.min(...Object.values(sh.levels || { a: 1 })))), 3) },
   { id: 'c-scholar', title: 'Academy Scholar', desc: 'Complete 8 research projects.', reward: { credits: 18000, dilithium: 80 }, ...count((s) => (s.techs || []).length, 8) },
+  { id: 'c-shipwright', title: 'Shipwright', desc: 'Design and commission your own starship.', reward: { credits: 5000, research: 150 }, ...count((s) => s.stats.designs || 0, 1) },
   { id: 'c-phoenix', title: 'Phoenix', desc: 'Lose a ship in battle — and come back for more.', reward: { credits: 3000, research: 100 }, ...count((s) => s.stats.deaths || 0, 1) },
   { id: 'c-diplomat', title: 'Galactic Diplomat', desc: 'Visit systems held by six different powers.', reward: { credits: 16000, research: 500 }, ...count((s, g) => factionsVisited(s, g), 6) },
   { id: 'c-tycoon', title: 'Tycoon', desc: 'Earn ₡250,000 over your career.', reward: { research: 1200, dilithium: 120 }, ...count((s) => Math.floor(s.stats.creditsEarned || 0), 250000) },

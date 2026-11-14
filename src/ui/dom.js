@@ -18,6 +18,7 @@ export const ICONS = {
   galaxy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 12c2-3 6-2.5 6 .5S13 18 9 16.5 4.5 10 8 7.5 17 5 19 9"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>`,
   ship: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l4 7 4 3-8-1-8 1 4-3z"/><path d="M12 12v8"/><path d="M8 20h8"/></svg>`,
   book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M8 7h7M8 11h7M8 15h5"/></svg>`,
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c1.2-3.6 4.1-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/></svg>`,
   gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>`,
   warp: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h7l3-7 3 14 3-7h2"/></svg>`,
   scan: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4"/><circle cx="12" cy="12" r="2.6"/></svg>`,
@@ -71,9 +72,17 @@ export function modal({ title = '', sub = '', body = '', footer = '', wide = fal
   };
   const api = { el: m, layer, close };
   modalStack.push(api);
+  // move keyboard focus into the dialog (and back when it closes)
+  const opener = document.activeElement;
+  requestAnimationFrame(() => {
+    const first = m.querySelector('input:not([type=hidden]):not([hidden]), .modal-foot .btn, button');
+    first?.focus?.({ preventScroll: true });
+  });
+  const _close = close;
+  api.close = () => { _close(); try { opener?.focus?.({ preventScroll: true }); } catch { /* gone */ } };
   if (closable) {
-    layer.addEventListener('pointerdown', (e) => { if (e.target === layer) close(); });
-    m.querySelector('[data-close]')?.addEventListener('click', close);
+    layer.addEventListener('pointerdown', (e) => { if (e.target === layer) api.close(); });
+    m.querySelector('[data-close]')?.addEventListener('click', () => api.close());
   }
   return api;
 }
@@ -113,6 +122,7 @@ export function buildTopbar(game, active, onNav) {
     { id: 'hangar', label: 'Shipyard', icon: 'ship' },
     { id: 'codex', label: 'Codex', icon: 'book' },
     { id: 'settings', label: 'Settings', icon: 'gear' },
+    { id: 'account', label: 'Account', icon: 'user' },
   ];
   topbarEl = el(`
     <div class="topbar">
@@ -122,13 +132,13 @@ export function buildTopbar(game, active, onNav) {
         <div class="stat credits"><i>◈</i><div><span class="v" data-k="credits">0</span><span class="k">credits</span></div></div>
         <div class="stat dil"><i>◆</i><div><span class="v" data-k="dil">0</span><span class="k">dilithium</span></div></div>
         <div class="stat res"><i>✧</i><div><span class="v" data-k="res">0</span><span class="k">research</span></div></div>
-        <div class="stat rank"><i>★</i><div><span class="v" data-k="rank">Ensign</span><span class="k" data-k="ship">Miranda</span></div></div>
+        <div class="stat rank" title="Experience to next promotion"><i>★</i><div><span class="v" data-k="rank">Ensign</span><span class="k" data-k="ship">Miranda</span><span class="xp-bar"><i data-k="xp"></i></span></div></div>
       </div>
       <div class="tb-nav"></div>
     </div>`);
   const nav = topbarEl.querySelector('.tb-nav');
   navItems.forEach((n) => {
-    const b = el(`<button class="navbtn" data-nav="${n.id}">${ICONS[n.icon]}<span class="lbl">${n.label}</span></button>`);
+    const b = el(`<button class="navbtn" data-nav="${n.id}" aria-label="${n.label}">${ICONS[n.icon] || ''}<span class="lbl">${n.label}</span></button>`);
     b.classList.toggle('active', n.id === active);
     b.addEventListener('click', () => onNav(n.id));
     nav.appendChild(b);
@@ -137,6 +147,7 @@ export function buildTopbar(game, active, onNav) {
     credits: topbarEl.querySelector('[data-k="credits"]'),
     dil: topbarEl.querySelector('[data-k="dil"]'),
     res: topbarEl.querySelector('[data-k="res"]'),
+    xp: topbarEl.querySelector('[data-k="xp"]'),
     rank: topbarEl.querySelector('[data-k="rank"]'),
     ship: topbarEl.querySelector('[data-k="ship"]'),
     civ: topbarEl.querySelector('.tb-brand span'),
@@ -152,6 +163,10 @@ export function updateTopbar(game) {
   refs.dil.textContent = fmt(Math.floor(game.state.dilithium));
   refs.res.textContent = fmt(Math.floor(game.state.research));
   refs.rank.textContent = game.rankTitle;
+  if (refs.xp) {
+    const lo = game.prevRankXp ?? 0, hi = game.nextRank || 1;
+    refs.xp.style.width = `${Math.max(2, Math.min(100, ((game.state.xp - lo) / Math.max(1, hi - lo)) * 100))}%`;
+  }
   refs.ship.textContent = game.shipClass.name.replace('-Class', '');
   refs.civ.textContent = game.state.civ.name;
 }

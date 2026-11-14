@@ -1,9 +1,28 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hullTextures, registryTexture, emblemTexture, glowTexture, hexToRgb } from './textures.js';
 import { SHIP_CLASSES, PALETTES } from '../data/ships.js';
 import { tryApplyModel } from './imported.js';
 
 /* ============================================================ geometry tools */
+/** Radius of a bodyLathe() profile at t (0 = aft, 1 = nose). */
+export function latheRadius(t, radius, { front = 0.55, back = 0.55, bulge = 0.2 } = {}) {
+  let r;
+  if (t < 0.5) r = radius * (back + (1 - back) * Math.pow(Math.sin((t / 0.5) * Math.PI * 0.5), 1.6));
+  else r = radius * (front + (1 - front) * Math.pow(Math.cos(((t - 0.5) / 0.5) * Math.PI * 0.5), 1.6));
+  return Math.max(0.0008, r * (1 + bulge * Math.sin(t * Math.PI) * 0.35));
+}
+
+/** Small deterministic PRNG so the same hull always gets the same lit windows. */
+function hashRng(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => {
+    h ^= h << 13; h ^= h >>> 17; h ^= h << 5;
+    return ((h >>> 0) % 10000) / 10000;
+  };
+}
+
 export function bodyLathe(len, radius, opts = {}) {
   const seg = opts.segments || 48;
   const front = opts.front ?? 0.55;      // 0 = pointy, 1 = bluff nose
@@ -78,15 +97,118 @@ export function extrudeProfile(points, depth, bevel = 0.05) {
   return g;
 }
 
+/**
+ * Surface detail: small panels and boxes stuck onto the hull.
+ *
+ * They used to be scattered through a box volume, which left most of them
+ * floating in space next to the ship. Now each one is dropped onto the hull
+ * with a ray (from above or below) and sits half-buried in the plating.
+ * A greeble that finds no hull underneath is simply skipped.
+ */
 export function greeble(group, material, count, box, rng = Math.random) {
   const [w, h, d] = box;
+  group.updateMatrixWorld(true);
+  const targets = [];
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !o.visible) return;
+    const m = o.material;
+    if (!m || m.transparent || m.isMeshBasicMaterial || o.userData.greeble) return;
+    targets.push(o);
+  });
+  if (!targets.length) return;
+  const ray = new THREE.Raycaster();
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const up = new THREE.Vector3(0, 1, 0);
+  const n = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
-    const g = new THREE.BoxGeometry(0.03 + rng() * w * 0.14, 0.02 + rng() * h * 0.5, 0.03 + rng() * d * 0.14);
+    const x = (rng() - 0.5) * w;
+    const z = (rng() - 0.5) * d;
+    const fromTop = rng() < 0.6;
+    const origin = new THREE.Vector3(x, fromTop ? h * 4 + 10 : -h * 4 - 10, z).applyMatrix4(group.matrixWorld);
+    ray.set(origin, new THREE.Vector3(0, fromTop ? -1 : 1, 0).transformDirection(group.matrixWorld));
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit || !hit.face) continue;
+    const sx = 0.04 + rng() * Math.min(0.22, w * 0.06);
+    const sz = 0.04 + rng() * Math.min(0.26, d * 0.06);
+    const sy = 0.015 + rng() * 0.035;
+    const g = new THREE.BoxGeometry(sx, sy, sz);
     const m = new THREE.Mesh(g, material);
-    m.position.set((rng() - 0.5) * w, (rng() - 0.5) * h, (rng() - 0.5) * d);
-    m.rotation.set(rng() * 0.3, rng() * 0.3, rng() * 0.3);
+    m.userData.greeble = true;
+    m.position.copy(hit.point).applyMatrix4(inv);
+    n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).transformDirection(inv);
+    m.quaternion.setFromUnitVectors(up, n);
+    m.rotateY(rng() * 0.4);
     group.add(m);
   }
+}
+
+/**
+ * Merge every static mesh of a hull into one mesh per material.
+ *
+ * A procedural ship is built from 100-200 small parts, and each part was its
+ * own draw call. Nothing animates the parts individually (the whole hull moves
+ * as one), so they can be baked: a typical hull drops to ~15 draw calls.
+ * Instanced meshes, sprites, points and anything flagged `userData.keep`
+ * are left alone.
+ *
+ * @returns {{before:number, after:number}} mesh counts, for tests
+ */
+function flipWinding(g) {
+  for (const attr of Object.values(g.attributes)) {
+    const a = attr.array, n = attr.itemSize;
+    for (let t = 0; t + 2 < attr.count; t += 3) {
+      for (let k = 0; k < n; k++) {
+        const i1 = (t + 1) * n + k, i2 = (t + 2) * n + k;
+        const tmp = a[i1]; a[i1] = a[i2]; a[i2] = tmp;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+}
+
+export function bakeStaticMeshes(group) {
+  group.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const buckets = new Map();
+  const victims = [];
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (Array.isArray(o.material) || o.userData.keep || o.renderOrder !== 0) return;
+    let p = o.parent, keep = false;
+    while (p && p !== group) { if (p.userData.keep) { keep = true; break; } p = p.parent; }
+    if (keep) return;
+    const key = o.material.uuid;
+    if (!buckets.has(key)) buckets.set(key, { material: o.material, geos: [] });
+    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.clearGroups();
+    g.morphAttributes = {};
+    const mtx = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    g.applyMatrix4(mtx);
+    // a mirrored part would come out inside-out once its transform is baked in
+    if (mtx.determinant() < 0) flipWinding(g);
+    buckets.get(key).geos.push(g);
+    victims.push(o);
+  });
+  const before = victims.length;
+  if (before < 2) return { before, after: before };
+  for (const v of victims) { v.parent.remove(v); v.geometry.dispose(); }
+  let after = 0;
+  for (const { material, geos } of buckets.values()) {
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    geos.forEach((g) => { if (g !== merged) g.dispose(); });
+    if (!merged) continue;
+    merged.computeBoundingSphere();
+    const m = new THREE.Mesh(merged, material);
+    m.name = 'baked';
+    group.add(m);
+    after++;
+  }
+  return { before, after };
 }
 
 export function disposeObject3D(root) {
@@ -157,7 +279,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const accent = new THREE.MeshStandardMaterial({
     color: new THREE.Color(palette.accent),
     emissive: new THREE.Color(palette.accent),
-    emissiveIntensity: 1.8,
+    emissiveIntensity: 1.3,
     metalness: 0.2,
     roughness: 0.3,
     toneMapped: false,
@@ -170,19 +292,26 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const deflector = new THREE.MeshStandardMaterial({
     color: new THREE.Color(deflectorColor),
     emissive: new THREE.Color(deflectorColor),
-    emissiveIntensity: 2.4,
+    emissiveIntensity: 1.6,
     metalness: 0.1,
     roughness: 0.22,
     toneMapped: false,
   });
-  const deflectorGlass = new THREE.MeshPhysicalMaterial({
+  // No `transmission` on any ship material: in three.js a single transmissive
+  // material makes the renderer draw the whole opaque scene a second time,
+  // every frame. Glossy + emissive reads the same at game distances.
+  const deflectorGlass = new THREE.MeshStandardMaterial({
     color: new THREE.Color(deflectorColor).lerp(new THREE.Color('#ffffff'), 0.4),
-    transmission: 0.55, roughness: 0.12, metalness: 0,
-    transparent: true, opacity: 0.65, envMapIntensity: 1.6,
+    emissive: new THREE.Color(deflectorColor), emissiveIntensity: 0.6,
+    roughness: 0.12, metalness: 0.1, envMapIntensity: 1.6,
   });
-  const glass = new THREE.MeshPhysicalMaterial({
-    color: 0x0a1420, metalness: 0.2, roughness: 0.08, transmission: 0.35,
-    transparent: true, opacity: 0.85, clearcoat: 1, clearcoatRoughness: 0.05,
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x0a1420, metalness: 0.6, roughness: 0.06, envMapIntensity: 1.8,
+  });
+  const bussard = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#ff6a3a'),
+    emissive: new THREE.Color('#e8361a'), emissiveIntensity: 1.35,
+    metalness: 0.2, roughness: 0.18, toneMapped: false,
   });
   const decal = new THREE.MeshBasicMaterial({
     map: registryTexture(record.name || cls.hullName, record.registry || cls.registry, '#1b232e'),
@@ -191,7 +320,9 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const emblem = new THREE.MeshBasicMaterial({
     map: emblemTexture(), transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -2,
   });
-  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, decal, emblem, palette, nacelleColor, deflectorColor };
+  // lit portholes: warm cabin light, slightly over-bright so bloom picks it up
+  const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(0.85), toneMapped: false });
+  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, bussard, decal, emblem, windows, palette, nacelleColor, deflectorColor };
 }
 
 /* ============================================================ builder */
@@ -208,6 +339,7 @@ class ShipBuilder {
     this.thrusters = [];
     this.nacelles = [];
     this.pivots = [];
+    this._rng = hashRng(classId + (record.name || ''));
   }
   mesh(geo, mat, pos = [0, 0, 0], rot = [0, 0, 0], parent = this.group) {
     const m = new THREE.Mesh(geo, mat);
@@ -260,17 +392,79 @@ class ShipBuilder {
     lowerDeck.position.y = -t * 0.35;
     lowerDeck.scale.z = scaleZ;
     g.add(lowerDeck);
+    this.saucerWindows(g, r, t, scaleZ);
     this.group.add(g);
     return g;
   }
 
-  hullBody({ len, r, y = 0, z = 0, front = 0.5, back = 0.5, scaleY = 1, scaleX = 1 }) {
+  hullBody({ len, r, y = 0, z = 0, front = 0.5, back = 0.5, scaleY = 1, scaleX = 1, windows = true }) {
     const geo = bodyLathe(len, r, { segments: this.detail ? 40 : 24, front, back });
     const m = new THREE.Mesh(geo, this.mats.hull);
     m.position.set(0, y, z);
     m.scale.set(scaleX, scaleY, 1);
     this.group.add(m);
+    if (windows) this.hullWindows({ len, r, y, z, front, back, scaleX, scaleY });
     return m;
+  }
+
+  /**
+   * Instanced rows of lit windows. One draw call per call site, so even a big
+   * hull with a few hundred portholes costs next to nothing.
+   * @param {Array<{pos:number[], rotY:number}>} spots
+   */
+  _windowMesh(spots, w, h, parent = this.group) {
+    if (!this.detail || !spots.length) return null;
+    const geo = new THREE.BoxGeometry(w, h, Math.max(0.008, w * 0.25));
+    const mesh = new THREE.InstancedMesh(geo, this.mats.windows, spots.length);
+    const o = new THREE.Object3D();
+    spots.forEach((sp, i) => {
+      o.position.set(...sp.pos);
+      o.rotation.set(0, sp.rotY, 0);
+      o.updateMatrix();
+      mesh.setMatrixAt(i, o.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = 'windows';
+    parent.add(mesh);
+    return mesh;
+  }
+
+  /** Two decks of windows around the saucer rim, with a few dark cabins. */
+  saucerWindows(g, r, t, scaleZ) {
+    const rng = this._rng;
+    const spots = [];
+    const decks = r > 1.2 ? [-0.3, -0.62] : [-0.42];
+    const n = Math.round(r * 46);
+    for (const dy of decks) {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        if (rng() < 0.18) continue;                  // some cabins are dark
+        const R = r * (1.004 + (dy + 0.3) * 0.012);
+        spots.push({ pos: [Math.sin(a) * R, t * dy, Math.cos(a) * R * scaleZ], rotY: a });
+      }
+    }
+    return this._windowMesh(spots, r * 0.034, t * 0.13, g);
+  }
+
+  /** Window rows down both flanks of a lathed hull section. */
+  hullWindows({ len, r, y, z, front, back, scaleX = 1, scaleY = 1 }) {
+    if (r < 0.2) return null;
+    const rng = this._rng;
+    const spots = [];
+    const rows = r > 0.45 ? [0.18, -0.12] : [0.05];
+    const n = Math.max(4, Math.round(len * 5.5));
+    for (const ry of rows) {
+      for (let i = 0; i < n; i++) {
+        const tt = 0.22 + (i / (n - 1)) * 0.56;
+        if (rng() < 0.2) continue;
+        const rad = latheRadius(tt, r, { front, back });
+        const yy = ry * rad;
+        const xx = Math.sqrt(Math.max(0, rad * rad - yy * yy)) * scaleX * 1.012;
+        const zz = z - len / 2 + tt * len;
+        for (const side of [-1, 1]) spots.push({ pos: [side * xx, y + yy * scaleY, zz], rotY: side * Math.PI / 2 });
+      }
+    }
+    return this._windowMesh(spots, 0.05, 0.028);
   }
 
   deflector({ r, y, z, rotY = 0 }) {
@@ -310,13 +504,9 @@ class ShipBuilder {
     pivot.add(body);
 
     // bussard collector at front (+Z)
-    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.86, 22, 12), new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(this.mats.nacelleColor).lerp(new THREE.Color('#ff5a3c'), 0.55),
-      emissive: new THREE.Color('#ff4b2b'), emissiveIntensity: 1.6,
-      metalness: 0.2, roughness: 0.15, transmission: 0.35, transparent: true, opacity: 0.92, toneMapped: false,
-    }));
-    bussard.position.z = len * 0.47;
-    bussard.scale.set(1, 1, 0.9);
+    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.7, 24, 14), this.mats.bussard);
+    bussard.position.z = len * 0.45;
+    bussard.scale.set(1, 1, 1.35);
     pivot.add(bussard);
     this.nacelles.push(bussard);
 
@@ -429,8 +619,10 @@ class ShipBuilder {
   /** Navigation lights: red port, green starboard, white strobes plus window glow. */
   navLights(span, len, y) {
     if (!this.detail) return;
+    const bulbMats = this._bulbMats || (this._bulbMats = new Map());
     const mk = (color, pos, size = 0.075) => {
-      const bulb = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
+      if (!bulbMats.has(color)) bulbMats.set(color, new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), bulbMats.get(color));
       bulb.position.set(...pos);
       this.group.add(bulb);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -460,6 +652,7 @@ class ShipBuilder {
       const size = new THREE.Vector3(); bounds.getSize(size);
       this.navLights(size.x * 0.44, size.z, bounds.max.y - size.y * 0.28);
     }
+    bakeStaticMeshes(this.group);
     this.group.userData = {
       cls: this.cls,
       phaserMuzzles: this.phaserMuzzles,
@@ -1041,6 +1234,75 @@ function buildVengeance(b) {
 }
 
 
+/* ---------------------------------------------------------- player designs */
+/** A strut between two points, as a flattened box. */
+function strut(b, from, to, thick, mat) {
+  const a = new THREE.Vector3(...from), c = new THREE.Vector3(...to);
+  const len = a.distanceTo(c);
+  if (len < 0.01) return null;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(thick, len, thick * 2.6), mat);
+  m.position.copy(a).add(c).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), c.clone().sub(a).normalize());
+  b.add(m);
+  return m;
+}
+
+function buildCustom(b) {
+  const d = b.cls.design || {};
+  const m = b.mats;
+  if (d.hullColor) { m.hull.color.set(d.hullColor); m.trim.color.set(d.hullColor).multiplyScalar(0.45); }
+  const R = d.saucer || 1.4;
+  const scaleZ = d.shape === 'oval' ? 1.3 : d.shape === 'arrow' ? 1.38 : 1;
+  const sy = 0.7;
+  const sz = R * scaleZ * 0.55;
+  b.saucer({ r: R, t: 0.13 + R * 0.05, y: sy, z: sz, scaleZ });
+  if (d.shape === 'arrow') {
+    // a swept bow: two angled plates meeting ahead of the saucer
+    const bow = b.mesh(new THREE.ConeGeometry(R * 0.55, R * 1.1, 3, 1), m.hull, [0, sy - 0.02, sz + R * scaleZ * 0.95], [Math.PI / 2, 0, 0]);
+    bow.scale.set(1, 1, 0.22);
+  }
+  const L = d.hull || 0;
+  const hullZ = sz - R * scaleZ * 0.55 - L * 0.5 + 0.2;
+  const hullY = sy - 0.62;
+  if (L > 0.3) {
+    const r = 0.26 + R * 0.12;
+    b.hullBody({ len: L, r, y: hullY, z: hullZ, front: 0.45, back: 0.65, scaleY: 0.9 });
+    b.deflector({ r: r * 0.7, y: hullY, z: hullZ + L * 0.5 - 0.02 });
+    if (d.neck !== false) {
+      b.pylon([[-0.14, 0], [0.14, 0], [0.22, 0.6], [-0.22, 0.6]], Math.min(0.9, L * 0.3), m.hull, [0, hullY + 0.1, sz - R * 0.35], [0, 0, 0]);
+    }
+    b.torpTube(-0.12, hullY - 0.05, hullZ + L * 0.5 - 0.1);
+    if (L > 1.5) b.torpTube(0.12, hullY - 0.05, hullZ + L * 0.5 - 0.1);
+  } else {
+    b.deflector({ r: 0.24, y: sy - 0.18, z: sz + R * scaleZ * 0.7 });
+    b.torpTube(0, sy - 0.1, sz + R * scaleZ * 0.9);
+  }
+  // nacelles + pylons
+  const nl = d.nacelleLen || 2.6;
+  const span = d.nacelleSpan || 1.4;
+  const ny = sy + (d.nacelleHeight ?? 0.7);
+  const nz = (L > 0.3 ? hullZ - L * 0.2 : sz - R) - nl * 0.15;
+  const anchorY = L > 0.3 ? hullY + 0.1 : sy;
+  const anchorZ = L > 0.3 ? hullZ : sz - R * 0.6;
+  const rows = d.nacelles === 4 ? [ny + 0.45, ny - 0.45] : [ny];
+  for (const y of rows) {
+    for (const side of [-1, 1]) {
+      b.nacelle({ x: side * span, y, z: nz, len: nl, r: 0.17 + nl * 0.012, tilt: side * 0.02 });
+      strut(b, [side * 0.15, anchorY, anchorZ], [side * span, y, nz - nl * 0.1], 0.07, m.hull);
+    }
+  }
+  b.impulse(sy + 0.02, sz - R * scaleZ * 0.92, 2, R * 0.3);
+  const w = d.weapons || 3;
+  for (let i = 0; i < Math.min(4, w); i++) {
+    const side = i % 2 ? 1 : -1;
+    b.phaserBank(side * R * 0.55, sy + 0.12, sz - (i >> 1) * R * 0.5, [0, side * 0.4, 0], 0.7);
+  }
+  b.decalOnSaucer(R * 0.9, 0.13 + R * 0.05, sy, sz);
+  greeble(b.group, m.dark, b.detail ? 22 : 8, [R * 1.8, 1, R * 2 + L]);
+  const length = Math.max(R * 2.2 * scaleZ, R * scaleZ + L + 1, nl + 1);
+  return b.finish({ length: length + 1.6, radius: Math.max(R, span + 0.4) + 0.4 });
+}
+
 /* ---------------------------------------------------------- 24th-c. additions */
 function buildSaber(b) {
   const m = b.mats;
@@ -1270,6 +1532,8 @@ const BUILDERS = {
   ambassador: buildAmbassador,
   crossfield: buildCrossfield,
   constitution3: buildConstitution3,
+  custom: buildCustom,
+  'custom-draft': buildCustom,
 };
 
 /** Build a complete starship. Forward is +Z. */

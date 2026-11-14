@@ -20,7 +20,10 @@ export class Input {
     this.actions = {
       fire: false, torpedo: false, boost: false, brake: false,
       throttleUp: false, throttleDown: false,
+      thrust: false, reverse: false, up: false, down: false,
     };
+    this.thrust = 0;   // -1 reverse .. +1 forward (W / S)
+    this.lift = 0;     // -1 down .. +1 up (Shift / Space)
     this.pressed = new Set();
     this.steer = { x: 0, y: 0 };
     this.rawSteer = { x: 0, y: 0 };
@@ -65,9 +68,14 @@ export class Input {
       if (isTyping(e)) return;
       const k = e.key.toLowerCase();
       this.keys.add(k);
+      // Flight keys: W/S thrust, A/D turn, Space up, Shift down (read each
+      // frame in update()). Weapons moved off Space/Shift to make room.
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-      if (k === ' ') { this._press('fire'); this.actions.fire = true; }
-      if (k === 'f' || k === 'shift') this._press(k === 'shift' ? 'boost' : 'torpedo');
+      // Tab cycles targets in flight, but must keep moving focus in menus/dialogs
+      if (k === 'tab' && (!document.activeElement || document.activeElement === document.body || document.activeElement === this.canvas) && !document.querySelector('.modal-layer')) e.preventDefault();
+      if (k === 'k') { this._press('fire'); this.actions.fire = true; }
+      if (k === 'f') this._press('torpedo');
+      if (k === 'b') { this._press('boost'); this.actions.boost = true; }
       if (k === 'e' || k === '1') this._press('ability');
       if (k === 'r') this._press('scan');
       if (k === 'q' || k === 'tab') this._press('target');
@@ -75,17 +83,18 @@ export class Input {
       if (k === 't') this._press('warp');
       if (k === 'v') this._press('assist');
       if (k === 'o') this._press('cam');
+      if (k === 'n') this._press('recenter');
+      if (k === 'p') this._press('autopilot');
       if (k === 'l') this._press('land');
       if (k === 'h') this._press('help');
-      if (k === 'p') this._press('pause');
     });
     window.addEventListener('keyup', (e) => {
       if (isTyping(e)) return;
       const k = e.key.toLowerCase();
       this.keys.delete(k);
-      if (k === ' ') this.actions.fire = false;
+      if (k === 'k') this.actions.fire = false;
       if (k === 'f') this.actions.torpedo = false;
-      if (k === 'shift') this.actions.boost = false;
+      if (k === 'b') this.actions.boost = false;
     });
     window.addEventListener('blur', () => this.releaseAll());
 
@@ -188,7 +197,7 @@ export class Input {
   /* ------------------------------------------------------------- actions */
   _press(name) {
     this.pressed.add(name);
-    if (name === 'fire' || name === 'torpedo' || name === 'boost') this.actions[name] = true;
+    if (['fire', 'torpedo', 'boost', 'thrust', 'reverse', 'up', 'down'].includes(name)) this.actions[name] = true;
     if (name === 'throttleUp' || name === 'throttleDown') this.actions[name] = true;
     this.haptic(name === 'fire' ? 0 : 8);
   }
@@ -316,8 +325,22 @@ export class Input {
     let kx = 0, ky = 0;
     if (this.keys.has('a') || this.keys.has('arrowleft')) kx -= 1;
     if (this.keys.has('d') || this.keys.has('arrowright')) kx += 1;
-    if (this.keys.has('w') || this.keys.has('arrowup')) ky += 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) ky -= 1;
+    // arrows still pitch the nose; W/S are engines now
+    if (this.keys.has('arrowup')) ky += 1;
+    if (this.keys.has('arrowdown')) ky -= 1;
+
+    // engines: W forward / S reverse, Space up / Shift down (plus on-screen pads)
+    let th = 0, lift = 0;
+    if (this.keys.has('w')) th += 1;
+    if (this.keys.has('s')) th -= 1;
+    if (this.keys.has(' ')) lift += 1;
+    if (this.keys.has('shift')) lift -= 1;
+    if (this.actions.thrust) th += 1;
+    if (this.actions.reverse) th -= 1;
+    if (this.actions.up) lift += 1;
+    if (this.actions.down) lift -= 1;
+    this.thrust = clamp(th, -1, 1);
+    this.lift = clamp(lift, -1, 1);
 
     let mx = 0, my = 0;
     const pad = this._readPad(dt);

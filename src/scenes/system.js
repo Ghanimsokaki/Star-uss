@@ -13,6 +13,8 @@ import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
+import { OrbitChase, chaseOffset } from '../core/orbitcam.js';
+import { stepFlight, massFor, collideSphere, autopilotControls } from '../core/flight.js';
 import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -38,8 +40,12 @@ export class SystemScene {
     this.shieldHitTimer = 0;
     this.shake = 0;
     this.speed = 0;
+    this.vel = new THREE.Vector3();   // real velocity — see core/flight.js
+    this.autopilot = null;            // { kind, label } while engaged
     this.boosting = false;
-    this.throttle = 0.72;   // 0.25 .. 1, driven by z/c, the pad, or the touch rail
+    // cruise speed 0..1 (Z / C, the touch rail). Keyboard pilots fly on W, so
+    // cruise starts at zero there; touch has no W key and starts cruising.
+    this.throttle = isTouchScheme() ? 0.6 : 0;
     this.fireCd = 0;
     this.torpCd = 0;
     this.abilityCd = 0;
@@ -134,6 +140,11 @@ export class SystemScene {
     this._modelOff = null;
     this.freecam?.dispose();
     this.freecam = null;
+    this.orbit?.dispose();
+    this.orbit = null;
+    this.loot?.forEach((L) => this.fxRoot.remove(L.g));
+    this.loot = [];
+    this.combo = null;
     this.app.input.lookLocked = false;
     this.app.setFreeCam?.(false);
     clearTimeout(this._hintTimer);
@@ -345,7 +356,19 @@ export class SystemScene {
       disposeObject3D(this.player);
     }
     const g = this.game;
-    this.player = buildShip(g.state.shipId, g.shipRecord, this.quality);
+    // player (flight transform) → bankRig (visual roll only) → hull.
+    // Rolling the whole rig keeps saucer, hull and nacelles together in a turn;
+    // the hull's userData is shared so muzzles, thrusters and length still read
+    // straight off this.player.
+    const hull = buildShip(g.state.shipId, g.shipRecord, this.quality);
+    this.player = new THREE.Group();
+    this.player.name = 'player';
+    this.player.userData = hull.userData;
+    this.bankRig = new THREE.Group();
+    this.bankRig.name = 'bank-rig';
+    this.bankRig.add(hull);
+    this.player.add(this.bankRig);
+    this.hullModel = hull;
     this.player.position.set(-260, 96, 560);
     this.player.lookAt(0, 10, 0);
     this.player.rotateY(-0.28);
@@ -360,8 +383,15 @@ export class SystemScene {
       }));
       s.position.copy(t.pos);
       s.scale.setScalar(2.2);
-      this.player.add(s);
+      this.bankRig.add(s);
       return s;
+    });
+    // look-around chase camera: right-drag (mouse) or right-half drag (touch)
+    this.orbit?.dispose();
+    this.orbit = new OrbitChase(this.app.canvas, {
+      input: this.app.input,
+      isTouch: () => isTouchScheme(),
+      enabled: () => !this.freecam?.active && !this.dead,
     });
     // free camera: O toggles a detached orbit rig so the hull can be inspected
     this.freecam?.dispose();
@@ -383,6 +413,8 @@ export class SystemScene {
       this._alignEngineSprites();
     });
     this.camDist = Math.max(18, (this.player.userData.length || 6) * 2.6);
+    this._mass = massFor(this.player.userData.length || 6);
+    this.vel?.set(0, 0, 0);
     this.camera.position.copy(this.player.position).add(V(0, 6, -this.camDist));
     this.camera.lookAt(this.player.position);
   }
@@ -473,6 +505,7 @@ export class SystemScene {
             </div>
           </div>
 
+          <div class="combo" id="combo" aria-live="polite"></div>
           <div class="crosshair"><div class="c"></div></div>
           <div class="target-reticle" id="reticle"><div class="ring"></div><div class="tl" id="reticle-label">TARGET</div></div>
           <div class="syslog" id="syslog"></div>
@@ -482,26 +515,35 @@ export class SystemScene {
             <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system (T)"><span class="ico">✧</span><span class="lbl">WARP</span><span class="kc">T</span></button>
             <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact (R)"><span class="ico">⌖</span><span class="lbl">SCAN</span><span class="kc">R</span></button>
             <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability (E)"><span class="ico">✷</span><span class="lbl">ABILITY</span><span class="kc">E</span></button>
-            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost (hold Shift)"><span class="ico">»</span><span class="lbl">BOOST</span><span class="kc">⇧</span></button>
+            <button class="act-btn auto" id="auto-btn" title="Autopilot — fly to your target, the nearest anomaly or planet (P)"><span class="ico">⟴</span><span class="lbl">AUTO</span><span class="kc">P</span></button>
+            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost (hold B)"><span class="ico">»</span><span class="lbl">BOOST</span><span class="kc">B</span></button>
             <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo (F)"><span class="ico">◉</span><span class="lbl">TORP</span><span class="kc">F</span></button>
-            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold Space)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">SPC</span></button>
+            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold left mouse or K)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">K</span></button>
           </div>
           <div class="control-strip" id="control-strip">
-            <span><b>WASD</b> / mouse — steer</span><span class="sep"></span>
-            <span><b>Space</b> fire</span><span class="sep"></span>
+            <span><b>W</b>/<b>S</b> thrust · <b>A</b>/<b>D</b> turn · <b>Space</b>/<b>Shift</b> up/down</span><span class="sep"></span>
+            <span><b>Click</b>/<b>K</b> fire</span><span class="sep"></span>
+            <span><b>P</b> autopilot</span><span class="sep"></span>
             <span><b>F</b> torpedo</span><span class="sep"></span>
             <span><b>E</b> ability</span><span class="sep"></span>
             <span><b>Q</b> target</span><span class="sep"></span>
             <span><b>T</b> warp</span><span class="sep"></span>
-            <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
+            <span><b>Z</b>/<b>C</b> cruise · <b>B</b> boost</span><span class="sep"></span>
             <span><b>X</b> brake</span><span class="sep"></span>
             <span><b>L</b> land</span><span class="sep"></span>
-            <span><b>O</b> camera</span>
+            <span><b>Right-drag</b> look · <b>wheel</b> zoom · <b>N</b> recenter</span><span class="sep"></span>
+            <span><b>O</b> free cam</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
           <div class="throttle-ui" id="throttle-ui">
             <div class="track"><i id="throttle-fill" style="height:72%"></i></div>
             <div class="lbl">IMP</div>
+          </div>
+          <div class="lift-pad" id="lift-pad">
+            <button class="thr-btn" data-action="up" data-hold="1" title="Climb (Space)"><span>⤒</span></button>
+            <button class="thr-btn fwd" data-action="thrust" data-hold="1" title="Forward thrust (W)"><span>W</span></button>
+            <button class="thr-btn" data-action="reverse" data-hold="1" title="Reverse (S)"><span>S</span></button>
+            <button class="thr-btn" data-action="down" data-hold="1" title="Descend (Shift)"><span>⤓</span></button>
           </div>
           <div class="throttle-pad" id="throttle-pad">
             <button class="thr-btn up" data-action="throttleUp" data-hold="1" title="More impulse power"><span>▲</span></button>
@@ -509,7 +551,7 @@ export class SystemScene {
             <button class="thr-btn down" data-action="throttleDown" data-hold="1" title="Less impulse power"><span>▼</span></button>
             <button class="thr-btn brake" data-action="brake" data-hold="0" title="All stop"><span>■</span></button>
           </div>
-          <div class="touch-hint" id="touch-hint">Drag to steer · tap to lock a target</div>
+          <div class="touch-hint" id="touch-hint">Left: drag to steer · Right: drag to look</div>
           <div class="globe-labels" id="obj-labels"></div>
         </div>
       </div>`);
@@ -518,6 +560,7 @@ export class SystemScene {
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
     $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
+    $('#auto-btn', this.ui).onclick = () => this._toggleAutopilot();
     $('#warp-btn', this.ui).onclick = () => {
       audio.ui();
       this.addLog('Opening the galaxy map — pick a star and engage warp.', 'good');
@@ -533,7 +576,7 @@ export class SystemScene {
     this._logEl = $('#syslog', this.ui);
     this.logLines = [];
     this.addLog(`Entering ${sys.name} — ${STAR_LABEL[sys.star] || 'stellar body'}`, 'good');
-    this.addLog('Phasers: Space / FIRE · Torpedoes: F / TORP · Scan: E / SCAN', '');
+    this.addLog(isTouchScheme() ? 'Drag left side to steer · W/S pads for thrust · AUTO flies for you' : 'W/S thrust · A/D turn · Space/Shift up/down · click or K fires · P autopilot', '');
     this._updateHud(true);
   }
 
@@ -551,8 +594,8 @@ export class SystemScene {
     hint.hidden = !touch;
     if (!touch) return;
     hint.textContent = device.form === 'tablet'
-      ? 'Drag anywhere to steer · tap a target to lock it on · CAM orbits the hull'
-      : 'Drag to steer · tap to lock · buttons fire';
+      ? 'Left side: drag to steer · Right side: drag to look around · pinch to zoom · double-tap to recenter'
+      : 'Left: drag to steer · Right: drag to look · double-tap recenters';
     hint.classList.remove('fade');
     clearTimeout(this._hintTimer);
     this._hintTimer = setTimeout(() => hint.classList.add('fade'), 7000);
@@ -627,8 +670,22 @@ export class SystemScene {
         }
       }
     }
-    const steerX = clamp(input.steer.x + assistX * (1 - Math.min(1, Math.abs(input.steer.x))), -1, 1);
-    const steerY = clamp(input.steer.y + assistY * (1 - Math.min(1, Math.abs(input.steer.y))), -1, 1);
+    // --- autopilot: P / the AUTO button. Any manual stick, key or thrust takes over.
+    if (input.consume('autopilot')) this._toggleAutopilot();
+    // manual = a key, stick, thumb or a mouse that is MOVING — a cursor merely
+    // resting off-centre (e.g. on the AUTO button) must not cancel autopilot
+    const k = input.keys;
+    const steering = ['a', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].some((x) => k.has(x)) || input.stick.active || (input.mouseActive && input.mouseIdle < 0.15 && (Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25));
+    const manual = steering || input.thrust !== 0 || input.lift !== 0;
+    let ap = null;
+    if (this.autopilot) {
+      if (manual) this._toggleAutopilot(false, 'Manual control');
+      else ap = this._autopilotStep();
+    }
+    const inSteerX = ap ? ap.steer.x : input.steer.x;
+    const inSteerY = ap ? ap.steer.y : input.steer.y;
+    const steerX = clamp(inSteerX + assistX * (1 - Math.min(1, Math.abs(inSteerX))), -1, 1);
+    const steerY = clamp(inSteerY + assistY * (1 - Math.min(1, Math.abs(inSteerY))), -1, 1);
 
     // steer.x = +1 is starboard; core/helm.js owns the yaw sign (and normalises)
     applyHelm(this.player.quaternion, { x: steerX, y: steerY }, {
@@ -639,14 +696,18 @@ export class SystemScene {
 
     // --- impulse throttle: hold Z / the ▲ pad, or C / ▼. X is all-stop.
     if (input.throttleRate) {
-      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0.25, 1);
+      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0, 1);
     }
+    let braking = false;
     if (input.consume('brake')) {
-      this.throttle = 0.3;
+      this.throttle = 0;
+      this._allStop = 0.8;
+      this._toggleAutopilot(false);
       this._abilityRing('#9fd8ff', 8);
-      toast('All stop — impulse power reduced', 'warn', 1400);
+      toast('All stop', 'warn', 1200);
       audio.ui();
     }
+    if (this._allStop > 0) { this._allStop -= dt; braking = true; }
 
     const boosting = input.actions.boost && this.boost > 0.02;
     this.boosting = boosting;
@@ -654,10 +715,19 @@ export class SystemScene {
     else this.boost = Math.min(1, this.boost + dt * 0.16);
     const baseSpeed = stats.speed;
     const sprint = this.speedBoostTimer > 0 ? 1.45 : 1;
-    this.speed = damp(this.speed, baseSpeed * this.throttle * sprint * (boosting ? 2.0 : 1), 2.2, dt);
+    // --- physics: engines push a real velocity; momentum carries through turns
+    stepFlight(this.vel, this.player.quaternion, {
+      thrust: ap ? ap.thrust : input.thrust,
+      lift: ap ? 0 : input.lift,
+      cruise: ap ? 0 : this.throttle,
+      boost: boosting,
+      brake: braking,
+    }, { maxSpeed: baseSpeed * sprint, mass: this._mass || 1 }, dt);
+    this.player.position.addScaledVector(this.vel, dt);
+    this.speed = this.vel.length();
+    this._collide(dt);
 
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
-    this.player.position.addScaledVector(forward, this.speed * dt);
 
     // stellar corona — fly too close to the star and the hull cooks
     if (this.star && !this.dead) {
@@ -701,8 +771,7 @@ export class SystemScene {
     }
 
     // player visual roll
-    const modelRoll = damp(this.player.children[0]?.rotation?.z || 0, bankFor(steerX), 4, dt);
-    if (this.player.children[0]) this.player.children[0].rotation.z = modelRoll;
+    if (this.bankRig) this.bankRig.rotation.z = damp(this.bankRig.rotation.z, bankFor(steerX), 4, dt);
 
     // engine glow pulsing
     if (this.engineSprites) {
@@ -720,12 +789,16 @@ export class SystemScene {
       // keep the shake from being lost while detached — it reads as hull impact
       if (this.shake > 0.001) this.shake = damp(this.shake, 0, 5, dt);
     } else {
-      const camGoal = this.player.position.clone()
-        .add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(3.2))
-        .add(forward.clone().multiplyScalar(-this.camDist));
-      this.camera.position.lerp(camGoal, 1 - Math.exp(-6 * dt));
-      const look = this.player.position.clone().add(forward.clone().multiplyScalar(32));
-      this.camera.lookAt(look);
+      // chase camera with a player-controlled orbit offset (look around like a
+      // third-person game); with no offset it is the classic behind-the-nose view
+      if (input.consume('recenter')) this.orbit?.recenter();
+      this.orbit?.update(dt);
+      const look0 = this.orbit || { yaw: 0, pitch: 0, zoom: 1 };
+      const { pos: camGoal, amount } = chaseOffset(this.player.position, this.player.quaternion, this.camDist, 3.2, look0);
+      this.camera.position.lerp(camGoal, 1 - Math.exp(-(amount > 0 ? 10 : 6) * dt));
+      const ahead = this.player.position.clone().add(forward.clone().multiplyScalar(32));
+      const atShip = this.player.position.clone().add(V(0, 1, 0).applyQuaternion(this.player.quaternion).multiplyScalar(1.2));
+      this.camera.lookAt(ahead.lerp(atShip, amount));
       if (this.shake > 0.001) {
         this.camera.position.x += (Math.random() - 0.5) * this.shake * 1.4;
         this.camera.position.y += (Math.random() - 0.5) * this.shake * 1.4;
@@ -1375,9 +1448,15 @@ export class SystemScene {
       this.shipRoot.remove(enemy.group);
       disposeObject3D(enemy.group);
     }, 60);
-    const reward = this.game.recordKill(enemy.def);
-    this.addLog(`Destroyed ${enemy.def.label || enemy.def.name} · +${fmtC(reward.credits)} +${reward.dilithium}D`, 'good');
-    toast(`+${fmtC(reward.credits)} · +${reward.dilithium} dilithium · +${reward.xp} XP`, 'good');
+    // kill streak: chain kills inside the window for a growing multiplier
+    this.combo = this.combo && this.combo.timer > 0 ? { count: this.combo.count + 1, timer: 10 } : { count: 1, timer: 10 };
+    const mult = 1 + Math.min(this.combo.count - 1, 6) * 0.25;
+    this.game.noteStreak(this.combo.count);
+    const reward = this.game.recordKill(enemy.def, { mult });
+    this.addLog(`Destroyed ${enemy.def.label || enemy.def.name} · +${fmtC(reward.credits)} +${reward.dilithium}D${mult > 1 ? ` · ×${mult} streak` : ''}`, 'good');
+    toast(`+${fmtC(reward.credits)} · +${reward.dilithium} dilithium · +${reward.xp} XP${mult > 1 ? ` · ×${mult}` : ''}`, 'good');
+    this._showCombo();
+    this._spawnLoot(pos, enemy);
     this.fleetKilled++;
     if (this.target === enemy) this.target = null;
     this._refreshMissionLine();
@@ -1496,6 +1575,150 @@ export class SystemScene {
   }
 
   /** Drop out of the sky next to the world we just lifted off from. */
+  /* ------------------------------------------------------------ loot + streaks */
+  _showCombo() {
+    const el2 = this.ui && $('#combo', this.ui);
+    if (!el2) return;
+    const c = this.combo;
+    const on = c && c.timer > 0 && c.count > 1;
+    el2.classList.toggle('on', !!on);
+    if (on) {
+      el2.innerHTML = `<b>×${(1 + Math.min(c.count - 1, 6) * 0.25).toFixed(2).replace(/0$/, '')}</b><span>${c.count} kill streak</span>`;
+      el2.classList.remove('pop'); void el2.offsetWidth; el2.classList.add('pop');
+    }
+  }
+
+  /** Salvage crates: fly through them. Bigger kills drop more, and a rare cache sometimes. */
+  _spawnLoot(pos, enemy) {
+    this.loot ||= [];
+    const big = enemy.kind === 'voidlord' ? 6 : enemy.kind === 'cube' ? 4 : enemy.kind === 'warbird' ? 3 : 1;
+    const n = big + (Math.random() < 0.5 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const rare = Math.random() < 0.08 * big;
+      const kind = rare ? 'rare' : ['credits', 'dilithium', 'research'][Math.floor(Math.random() * 3)];
+      const color = { credits: '#ffb347', dilithium: '#59e0ff', research: '#b47bff', rare: '#62f2a6' }[kind];
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(this._lootGeo ||= new THREE.OctahedronGeometry(0.9, 0),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.6), toneMapped: false }));
+      g.add(core);
+      g.add(glowSprite(color, rare ? 9 : 6, 0.75));
+      g.position.copy(pos);
+      const vel = new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 18);
+      this.fxRoot.add(g);
+      this.loot.push({ g, core, vel, kind, life: 45, rare });
+    }
+  }
+
+  _updateLoot(dt) {
+    if (!this.loot?.length) return;
+    const p = this.player.position;
+    for (const L of this.loot) {
+      if (L.done) continue;
+      L.life -= dt;
+      const to = p.clone().sub(L.g.position);
+      const d = to.length();
+      // tractor beam: crates drift toward the ship once you are close
+      if (d < 45) L.vel.addScaledVector(to.normalize(), (45 - d) * 2.2 * dt);
+      L.vel.multiplyScalar(Math.exp(-0.9 * dt));
+      L.g.position.addScaledVector(L.vel, dt);
+      L.core.rotation.x += dt * 1.6; L.core.rotation.y += dt * 2.1;
+      if (d < 6) {
+        L.done = true;
+        const r = L.kind === 'rare' ? { credits: 2500, dilithium: 40, research: 120, xp: 60 }
+          : L.kind === 'credits' ? { credits: 350 + Math.round(Math.random() * 400) }
+          : L.kind === 'dilithium' ? { dilithium: 8 + Math.round(Math.random() * 10) }
+          : { research: 20 + Math.round(Math.random() * 25) };
+        this.game.collectLoot(r);
+        audio.ui();
+        const bits = [r.credits && `+${fmtC(r.credits)}`, r.dilithium && `+${r.dilithium} D`, r.research && `+${r.research} RP`].filter(Boolean).join(' · ');
+        toast(L.rare ? `Rare cache! ${bits}` : bits, 'good', 1300);
+      }
+      if (L.done || L.life <= 0) { this.fxRoot.remove(L.g); L.core.material.dispose(); L.done = true; }
+    }
+    this.loot = this.loot.filter((L) => !L.done);
+  }
+
+  /* ------------------------------------------------------------ physics */
+  /** Planets and hostile hulls are solid: bounce off, and hit hard = damage. */
+  _collide() {
+    const pos = this.player.position;
+    const shipR = Math.max(1.5, (this.player.userData.length || 6) * 0.35);
+    for (const p of this.planetNodes || []) {
+      const c = p.node.getWorldPosition(V());
+      const hit = collideSphere(pos, this.vel, c, p.radius * 1.02, shipR, 0.3);
+      if (hit > 6) this._impact(hit, `Impact with ${p.data.name}`);
+    }
+    for (const e of this.enemies || []) {
+      if (e.dead) continue;
+      const hit = collideSphere(pos, this.vel, e.group.position, (e.radius || 3) * 0.8, shipR, 0.5);
+      if (hit > 4) {
+        this._impact(hit * 0.6, 'Collision!');
+        if (typeof e.hp === 'number') { e.hp -= hit * 0.8; if (e.hp <= 0) this._killEnemy(e); }
+      }
+    }
+  }
+
+  _impact(speed, msg) {
+    if (this.time - (this._lastImpact || 0) < 0.35) return;
+    this._lastImpact = this.time;
+    this._damagePlayer(Math.min(60, speed * 0.55));
+    this.shake = Math.max(this.shake, Math.min(1.4, speed / 40));
+    if (msg) this.addLog(msg, 'hostile');
+  }
+
+  /* ------------------------------------------------------------ autopilot */
+  /** Pick where the autopilot should go: target → open anomaly → nearest planet. */
+  _autopilotDest() {
+    if (this.target && !this.target.dead) {
+      return { pos: this.target.group.position.clone(), standoff: 70, label: this.target.def?.name || 'target', kind: 'target' };
+    }
+    const here = this.player.position;
+    let best = null;
+    for (const a of this.anomalyNodes || []) {
+      if (a.scanned) continue;
+      const p = (a.node || a.group).getWorldPosition(V());
+      const d = p.distanceTo(here);
+      if (!best || d < best.d) best = { d, pos: p, standoff: 24, label: a.data.name, kind: 'anomaly' };
+    }
+    if (best) return best;
+    for (const p of this.planetNodes || []) {
+      const c = p.node.getWorldPosition(V());
+      const d = c.distanceTo(here);
+      if (!best || d < best.d) best = { d, pos: c, standoff: p.radius * 1.9 + 20, label: p.data.name, kind: 'planet', live: p };
+    }
+    return best;
+  }
+
+  _toggleAutopilot(on = !this.autopilot, why = '') {
+    const btn = this.ui && $('#auto-btn', this.ui);
+    if (!on) {
+      if (this.autopilot) toast(why ? `Autopilot off — ${why}` : 'Autopilot off', 'warn', 1400);
+      this.autopilot = null;
+      btn?.classList.remove('on');
+      return;
+    }
+    const d = this._autopilotDest();
+    if (!d) { toast('Autopilot: nothing to fly to', 'warn', 1600); return; }
+    this.autopilot = { kind: d.kind, label: d.label };
+    btn?.classList.add('on');
+    this.addLog(`Autopilot engaged — course laid in for ${d.label}`, 'good');
+    toast(`Autopilot → ${d.label}`, 'good', 1800);
+    audio.ui();
+  }
+
+  _autopilotStep() {
+    const d = this._autopilotDest();
+    if (!d) { this._toggleAutopilot(false, 'no destination'); return null; }
+    if (d.label !== this.autopilot.label) this.autopilot = { kind: d.kind, label: d.label };
+    const out = autopilotControls(this.player.position, this.player.quaternion, this.vel, d.pos, d.standoff, this.stats.speed);
+    if (out.arrived && d.kind !== 'target') {
+      this._toggleAutopilot(false, `arrived at ${d.label}`);
+      if (d.kind === 'planet') this.addLog('In orbit. Press L to land.', 'good');
+      if (d.kind === 'anomaly') this.addLog('On station. Press R to scan.', 'good');
+    }
+    return out;
+  }
+
   _spawnNear(planetId) {
     const entry = this.planetNodes?.find((n) => n.data.id === planetId);
     if (!entry || !this.player) return;
@@ -1505,8 +1728,9 @@ export class SystemScene {
     at.y += entry.radius * 0.3;
     this.player.position.copy(at);
     this.player.lookAt(centre.x, centre.y, centre.z); // nose +Z, so we face the planet
-    this.speed = 48;      // gentle, the damped throttle takes over next frame
-    this.throttle = 0.4;
+    this.speed = 0;
+    this.vel.set(0, 0, 0);
+    this.throttle = isTouchScheme() ? 0.4 : 0;
   }
 
   /** The nearest planet with a surface, within landing range. */
@@ -1735,7 +1959,7 @@ export class SystemScene {
         if (angle > 0.72) {
           e.fireCd = Math.max(0.5, 1.6 / (e.def.fireRate || 1)) * (0.7 + Math.random() * 0.6);
           const muzzle = pos.clone().addScaledVector(forward, e.radius * 0.8);
-          const lead = playerPos.clone().addScaledVector(V(0, 0, 1).applyQuaternion(this.player.quaternion).multiplyScalar(this.speed * 0.4));
+          const lead = playerPos.clone().addScaledVector(this.vel, 0.4);
           const shotDir = lead.sub(muzzle).normalize();
           this._spawnEnemyBolt(muzzle, shotDir, e.def.dmg, e.def.colors.glow);
           audio.phaser(-0.3);
@@ -1951,6 +2175,11 @@ export class SystemScene {
       this._updateProjectiles(capped);
       this._updateClones(capped);
       this._updateSaucerSection(capped);
+      this._updateLoot(capped);
+      if (this.combo?.timer > 0) {
+        this.combo.timer -= capped;
+        if (this.combo.timer <= 0) this._showCombo();
+      }
       this.lastDamage += capped;
       if (this.lastDamage > 3.5 && this.shield < this.maxShield) {
         this.shield = Math.min(this.maxShield, this.shield + this.stats.regen * capped);

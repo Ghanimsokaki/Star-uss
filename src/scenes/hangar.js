@@ -8,6 +8,7 @@ import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, NAC
 import { TECHS, TECH_ORDER } from '../data/tech.js';
 import { audio } from '../core/audio.js';
 import { escapeHtml } from '../core/util.js';
+import { CUSTOM_ID, DRAFT_ID, DEFAULT_DESIGN, DESIGN_LIMITS, SAUCER_SHAPES, sanitizeDesign, statsForDesign, registerCustomClass } from '../data/designer.js';
 
 export class HangarScene {
   constructor(app) {
@@ -123,6 +124,7 @@ export class HangarScene {
   }
 
   exit() {
+    this._closeDesigner(false);
     this._bindings?.forEach((off) => off());
     this._bindings = [];
     this.drawers?.destroy();
@@ -138,6 +140,10 @@ export class HangarScene {
 
   _previewRecord() {
     const id = this.previewId;
+    if (id === DRAFT_ID && this._draft) {
+      const d = sanitizeDesign(this._draft);
+      return { levels: { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 }, palette: PALETTES[0].id, nacelle: d.glow, deflector: '#5ab7ff', name: d.name, registry: d.registry, kills: 0 };
+    }
     if (this.game.state.ships[id]) return this.game.state.ships[id];
     const cls = SHIP_CLASSES[id];
     return {
@@ -214,7 +220,8 @@ export class HangarScene {
     $('#dil-val', this.ui).textContent = fmt(g.state.dilithium);
     $('#rp-val', this.ui).textContent = fmt(g.state.research);
     const list = $('#fleet-list', this.ui);
-    list.innerHTML = SHIP_ORDER.map((id) => {
+    const ids = g.state.customDesign ? [CUSTOM_ID, ...SHIP_ORDER] : SHIP_ORDER;
+    list.innerHTML = `<button class="btn primary wide design-cta" id="open-designer">✎ ${g.state.customDesign ? 'Refit your design' : 'Design your own ship'}</button>` + ids.map((id) => {
       const cls = SHIP_CLASSES[id];
       const owned = g.state.ownedShips.includes(id);
       const active = g.state.shipId === id;
@@ -235,6 +242,7 @@ export class HangarScene {
         <div class="sc-tier">T${cls.tier}</div>
       </div>`;
     }).join('');
+    $('#open-designer', list).onclick = () => this._openDesigner();
     $$('[data-ship]', list).forEach((card) => {
       card.addEventListener('click', () => {
         this.previewId = card.dataset.ship;
@@ -245,6 +253,127 @@ export class HangarScene {
       });
     });
     this._refreshLabels();
+  }
+
+  /* ---------------------------------------------------------------- designer */
+  _openDesigner(start = null) {
+    audio.ui();
+    this.drawers?.close?.();
+    this._closeDesigner(false);
+    this._draft = sanitizeDesign(start || this.game.state.customDesign || DEFAULT_DESIGN);
+    this._prevPreview = this.previewId;
+    this.previewId = DRAFT_ID;
+    const L = DESIGN_LIMITS;
+    const slider = (k, label, [lo, hi], step = 0.05) => `
+      <label class="dz-row"><span>${label}</span>
+        <input type="range" data-dz="${k}" min="${lo}" max="${hi}" step="${step}" value="${this._draft[k]}"></label>`;
+    this._designer = el(`
+      <aside class="panel designer" role="dialog" aria-label="Ship designer">
+        <div class="panel-head"><div><h3>Ship Designer</h3><span class="sub">Utopia Planitia drafting room</span></div>
+          <button class="close-x" data-dz-close aria-label="Close designer">✕</button></div>
+        <div class="panel-body scroll">
+          <div class="field"><label>Ship name</label><input type="text" data-dz="name" maxlength="28" value="${escapeHtml(this._draft.name)}"></div>
+          <div class="field"><label>Registry</label><input type="text" data-dz="registry" maxlength="12" value="${escapeHtml(this._draft.registry)}"></div>
+          <div class="dz-group">Primary hull</div>
+          ${slider('saucer', 'Saucer size', L.saucer)}
+          <div class="dz-row"><span>Saucer shape</span><div class="seg" data-dz-seg="shape">${SAUCER_SHAPES.map((x) => `<button data-v="${x}" class="${this._draft.shape === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
+          ${slider('weapons', 'Phaser strips', L.weapons, 1)}
+          <div class="dz-group">Engineering hull</div>
+          ${slider('hull', 'Secondary hull length (0 = none)', L.hull)}
+          <div class="dz-row"><span>Neck</span><div class="seg" data-dz-seg="neck"><button data-v="true" class="${this._draft.neck ? 'on' : ''}">On</button><button data-v="false" class="${!this._draft.neck ? 'on' : ''}">Off</button></div></div>
+          <div class="dz-group">Warp nacelles</div>
+          <div class="dz-row"><span>Count</span><div class="seg" data-dz-seg="nacelles"><button data-v="2" class="${this._draft.nacelles === 2 ? 'on' : ''}">2</button><button data-v="4" class="${this._draft.nacelles === 4 ? 'on' : ''}">4</button></div></div>
+          ${slider('nacelleLen', 'Length', L.nacelleLen)}
+          ${slider('nacelleSpan', 'Span', L.nacelleSpan)}
+          ${slider('nacelleHeight', 'Height', L.nacelleHeight)}
+          <div class="dz-group">Paint</div>
+          <div class="dz-row"><span>Hull colour</span><input type="color" data-dz="hullColor" value="${this._draft.hullColor}"></div>
+          <div class="dz-row"><span>Warp glow</span><input type="color" data-dz="glow" value="${this._draft.glow}"></div>
+          <div class="dz-group">Performance</div>
+          <div class="dz-stats" id="dz-stats"></div>
+        </div>
+        <div class="panel-foot dz-foot">
+          <button class="btn ghost" data-dz-reset>Reset</button>
+          <button class="btn primary" data-dz-buy></button>
+        </div>
+      </aside>`);
+    this.ui.appendChild(this._designer);
+    this.ui.classList.add('designing');
+    const D = this._designer;
+    D.querySelectorAll('[data-dz]').forEach((inp) => {
+      inp.addEventListener('input', () => {
+        const k = inp.dataset.dz;
+        this._draft[k] = inp.type === 'range' ? +inp.value : inp.value;
+        this._redesign(k === 'name' || k === 'registry');
+      });
+    });
+    D.querySelectorAll('[data-dz-seg]').forEach((seg) => {
+      seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+        seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+        const k = seg.dataset.dzSeg;
+        const v = b.dataset.v;
+        this._draft[k] = k === 'nacelles' ? +v : k === 'neck' ? v === 'true' : v;
+        audio.ui();
+        this._redesign();
+      }));
+    });
+    D.querySelector('[data-dz-close]').onclick = () => { audio.ui(); this._closeDesigner(true); };
+    D.querySelector('[data-dz-reset]').onclick = () => {
+      // back to the stock hull (keeps the name/registry the player typed)
+      const { name, registry } = this._draft;
+      this._closeDesigner(false);
+      this._openDesigner({ ...DEFAULT_DESIGN, name, registry });
+    };
+    D.querySelector('[data-dz-buy]').onclick = () => {
+      const res = this.game.commissionDesign(this._draft);
+      if (!res.ok) { toast(res.why, 'warn'); audio.error?.(); return; }
+      audio.upgrade();
+      toast(`${escapeHtml(sanitizeDesign(this._draft).name)} commissioned · ${fmtC(res.price)}`, 'good', 3200);
+      this._closeDesigner(false, true);
+    };
+    this._redesign();
+  }
+
+  /** Re-register the draft as the custom class and rebuild the preview (once per frame at most). */
+  _redesign(textOnly = false) {
+    if (!this._designer) return;
+    const d = sanitizeDesign(this._draft);
+    // the draft lives under its own class id so the ship you actually own (and
+    // may be flying) keeps its paid-for stats while you experiment
+    registerCustomClass(d, DRAFT_ID);
+    if (!textOnly) {
+      // a full hull build (greebles + mesh merge) is too heavy for every
+      // slider tick: rebuild once the slider has paused for a moment
+      clearTimeout(this._dzT);
+      this._dzT = setTimeout(() => this._buildShip(), 90);
+    }
+    this._refreshLabels();
+    const st = statsForDesign(d);
+    const ref = statsForDesign(DEFAULT_DESIGN);
+    const row = (k, label, v, max) => `<div class="statbar"><div class="lbl"><span>${label}</span><b>${v}</b></div>
+      <div class="bar thin ${v >= ref[k] ? '' : 'amber'}"><i style="width:${Math.min(100, Math.round((v / max) * 100))}%"></i></div></div>`;
+    $('#dz-stats', this._designer).innerHTML = [
+      row('hull', 'Hull', st.hull, 3400), row('shield', 'Shields', st.shield, 2200),
+      row('phaser', 'Phasers', st.phaser, 80), row('torp', 'Torpedoes', st.torp, 420),
+      row('speed', 'Speed', st.speed, 90), row('turn', 'Agility', st.turn, 1.9),
+    ].join('');
+    const price = this.game.designPrice(d);
+    const btn = this._designer.querySelector('[data-dz-buy]');
+    btn.textContent = `${this.game.state.customDesign ? 'Refit' : 'Commission'} · ${fmtC(price)}`;
+    btn.disabled = this.game.state.credits < price;
+  }
+
+  _closeDesigner(rebuild = true, keep = false) {
+    if (!this._designer) return;
+    clearTimeout(this._dzT);
+    this._designer.remove();
+    this._designer = null;
+    this.ui?.classList.remove('designing');
+    registerCustomClass(null, DRAFT_ID);
+    if (keep) this.previewId = CUSTOM_ID;                     // just commissioned: show it
+    else this.previewId = this._prevPreview || this.game.state.shipId;
+    if (!SHIP_CLASSES[this.previewId]) this.previewId = this.game.state.shipId;
+    if (rebuild || keep) { this._buildShip(); this._refreshFleet(); this._refreshTab(); }
   }
 
   _refreshLabels() {

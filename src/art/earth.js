@@ -69,6 +69,7 @@ export class EarthGlobe {
         uWater: { value: null },
         uSunDir: { value: this.sunDir },
         uHasTex: { value: 0 },
+        uNightGain: { value: 1 },
       },
       vertexShader: `
         varying vec2 vUv; varying vec3 vN; varying vec3 vW;
@@ -81,7 +82,7 @@ export class EarthGlobe {
         }`,
       fragmentShader: `
         uniform sampler2D uDay; uniform sampler2D uNight; uniform sampler2D uWater;
-        uniform vec3 uSunDir; uniform float uHasTex;
+        uniform vec3 uSunDir; uniform float uHasTex; uniform float uNightGain;
         varying vec2 vUv; varying vec3 vN; varying vec3 vW;
         void main(){
           vec3 N = normalize(vN);
@@ -101,7 +102,7 @@ export class EarthGlobe {
           float spec = pow(max(dot(N, H), 0.0), 80.0) * water * 1.7;
           float fres = pow(1.0 - max(dot(N, V), 0.0), 3.4);
           vec3 lit = dayCol * (0.18 + 1.15 * max(sun, 0.0));
-          vec3 night = nightCol * (1.0 - dayAmount) * 1.9 + vec3(0.004, 0.012, 0.03);
+          vec3 night = nightCol * (1.0 - dayAmount) * 1.9 * uNightGain + vec3(0.004, 0.012, 0.03);
           vec3 col = mix(night, lit + vec3(0.85,0.95,1.0) * spec, dayAmount);
           col += vec3(0.12,0.4,1.0) * fres * (0.18 + dayAmount * 1.15);
           gl_FragColor = vec4(col, 1.0);
@@ -188,7 +189,89 @@ export class EarthGlobe {
     this.clouds.rotation.y += dt * 0.016;
     this.markerLayer.rotation.y += dt * 0.012;
     if (this.grid) this.grid.rotation.y -= dt * 0.004;
-    if (this.clouds.material && this.ready) this.clouds.material.needsUpdate = true;
+    // (the cloud material used to be flagged needsUpdate here every frame,
+    //  which re-uploaded it 60 times a second for nothing)
+    if (this.satellites) {
+      for (const sat of this.satellites.children) {
+        const u = sat.userData;
+        u.a += u.speed * dt;
+        sat.position.set(Math.cos(u.a) * u.r, 0, Math.sin(u.a) * u.r).applyQuaternion(u.q);
+      }
+    }
+    if (this.shield?.visible) this.shield.material.uniforms.uTime.value = elapsed || 0;
+  }
+
+  /* ---------------------------------------------------------- advanced tools */
+  /** Show or hide a globe layer: clouds | lights | grid | satellites | shield. */
+  setLayer(name, on) {
+    if (name === 'clouds') this.clouds.visible = on;
+    else if (name === 'lights') this.material.uniforms.uNightGain.value = on ? 1 : 0;
+    else if (name === 'grid' && this.grid) this.grid.visible = on;
+    else if (name === 'satellites' && this.satellites) this.satellites.visible = on;
+    else if (name === 'shield' && this.shield) this.shield.visible = on && this.shieldLevel > 0;
+  }
+
+  /**
+   * Put the sun over a given local hour (0-24) at the sub-solar longitude of the
+   * camera's side, or pass null to go back to the live sun.
+   */
+  setSunHour(hour) {
+    const a = ((hour ?? 12) / 24) * Math.PI * 2 - Math.PI;   // noon faces +X
+    this.sunDir.set(Math.cos(a), 0.32, Math.sin(a)).normalize();
+  }
+
+  /** Orbital traffic: satellites and stations that grow with the civilisation. */
+  setTraffic(count) {
+    count = Math.max(0, Math.min(140, Math.round(count)));
+    if (!this.satellites) {
+      this.satellites = new THREE.Group();
+      this.satellites.name = 'satellites';
+      this.group.add(this.satellites);
+      this._satGeo = new THREE.OctahedronGeometry(0.05, 0);
+      this._satMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#bfeaff').multiplyScalar(1.6), toneMapped: false });
+    }
+    const sats = this.satellites;
+    while (sats.children.length > count) sats.remove(sats.children[sats.children.length - 1]);
+    let i = sats.children.length;
+    while (sats.children.length < count) {
+      const m = new THREE.Mesh(this._satGeo, this._satMat);
+      const rnd = (k) => { const x = Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+      const incl = (rnd(1) - 0.5) * Math.PI * 0.9;
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(incl, rnd(2) * Math.PI * 2, 0));
+      const geo = rnd(3) < 0.12;   // a few high, slow geostationary platforms
+      m.userData = { a: rnd(4) * Math.PI * 2, r: this.radius * (geo ? 1.9 : 1.08 + rnd(5) * 0.22), speed: geo ? 0.05 : 0.35 + rnd(6) * 0.4, q };
+      if (geo) m.scale.setScalar(2.2);
+      sats.add(m);
+      i++;
+    }
+  }
+
+  /** A shimmering shield bubble whose strength follows the Planetary Shield districts. */
+  setShieldLevel(level) {
+    this.shieldLevel = level;
+    if (!this.shield) {
+      this.shield = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(this.radius * 1.22, 5),
+        new THREE.ShaderMaterial({
+          uniforms: { uTime: { value: 0 }, uStrength: { value: 0 } },
+          vertexShader: `varying vec3 vN; varying vec3 vW; varying vec3 vP;
+            void main(){ vP = position; vN = normalize(mat3(modelMatrix)*normal); vec4 w = modelMatrix*vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+          fragmentShader: `uniform float uTime; uniform float uStrength; varying vec3 vN; varying vec3 vW; varying vec3 vP;
+            void main(){
+              vec3 V = normalize(cameraPosition - vW);
+              float rim = pow(1.0 - abs(dot(normalize(vN), V)), 2.2);
+              float hex = abs(sin(vP.x * 2.6 + uTime * 0.6) * sin(vP.y * 2.6) * sin(vP.z * 2.6 - uTime * 0.4));
+              float a = (rim * 0.55 + smoothstep(0.92, 1.0, hex) * 0.25) * uStrength;
+              gl_FragColor = vec4(vec3(0.45, 0.85, 1.0) * a * 1.4, a);
+            }`,
+          transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        })
+      );
+      this.shield.name = 'planetary-shield';
+      this.group.add(this.shield);
+    }
+    this.shield.material.uniforms.uStrength.value = Math.min(1, 0.25 + level * 0.1);
+    this.shield.visible = level > 0;
   }
 
   /* ---------------------------------------------------------- districts */

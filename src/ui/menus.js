@@ -102,7 +102,7 @@ export function showHowTo() {
       <div class="grid2" style="gap:10px">
         <div class="codex-entry" style="${touch ? 'opacity:.55' : ''}">
           <h4>Flight — Mouse &amp; keyboard</h4>
-          <p><b>Mouse</b> or <b>W A S D</b> / arrows steer · <b>Space</b> / left click phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>Shift</b> boost · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> throttle · <b>X</b> all stop · <b>V</b> weapons assist · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
+          <p><b>W</b> forward · <b>S</b> back · <b>A</b>/<b>D</b> turn · <b>Space</b> up · <b>Shift</b> down · <b>mouse</b>/arrows aim · <b>left click</b>/<b>K</b> phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>B</b> boost · <b>P</b> autopilot · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> cruise speed · <b>X</b> all stop · <b>V</b> weapons assist · <b>right-drag</b> or two-finger swipe looks around · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
         </div>
         <div class="codex-entry" style="${touch ? '' : 'opacity:.55'}">
           <h4>Flight — Touch</h4>
@@ -144,6 +144,20 @@ export function showSettings(app) {
         <div><div class="nm">Graphics</div><div class="ds">Resolution, bloom and model detail</div></div>
         <div class="seg" data-seg="quality">
           ${['auto', 'low', 'medium', 'high'].map((q) => `<button data-q="${q}" class="${quality === q ? 'on' : ''}">${q}</button>`).join('')}
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Hold 60 FPS</div><div class="ds">Automatically lowers resolution, then anti-aliasing and bloom, whenever the frame rate dips — and raises them again when there is headroom</div></div>
+        <div class="seg" data-seg="perf">
+          <button data-p="on" class="${g.state.settings.autoPerf !== false ? 'on' : ''}">On</button>
+          <button data-p="off" class="${g.state.settings.autoPerf === false ? 'on' : ''}">Off</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Show FPS</div><div class="ds">Frame rate and render resolution in the corner</div></div>
+        <div class="seg" data-seg="fps">
+          <button data-fps="on" class="${g.state.settings.showFps ? 'on' : ''}">On</button>
+          <button data-fps="off" class="${!g.state.settings.showFps ? 'on' : ''}">Off</button>
         </div>
       </div>
       <div class="setting-row">
@@ -200,6 +214,22 @@ export function showSettings(app) {
     g.state.settings.quality = q;
     app.applyQuality(q);
     g.save();
+  }));
+  elm.querySelectorAll('[data-seg="perf"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="perf"] button').forEach((x) => x.classList.toggle('on', x === b));
+    const on = b.dataset.p === 'on';
+    g.state.settings.autoPerf = on;
+    app.viewport.governor.enabled = on;
+    if (!on) app.viewport.governor.reset();
+    g.save();
+    audio.ui();
+  }));
+  elm.querySelectorAll('[data-seg="fps"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="fps"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.showFps = b.dataset.fps === 'on';
+    app.setFpsMeter(g.state.settings.showFps);
+    g.save();
+    audio.ui();
   }));
   elm.querySelectorAll('[data-seg="assist"] button').forEach((b) => b.addEventListener('click', () => {
     elm.querySelectorAll('[data-seg="assist"] button').forEach((x) => x.classList.toggle('on', x === b));
@@ -339,6 +369,167 @@ export function showIntro(app) {
       </div>`,
     footer: `<button class="btn primary" data-close2>Take command</button>`,
     onClose: () => { app?.game && (app.game.state.flags.introSeen = true, app.game.save()); },
+  });
+  m.el.querySelector('[data-close2]').onclick = () => m.close();
+}
+
+/** Daily login reward: a seven-day streak that resets if you miss a day. */
+export function showDaily(game) {
+  const offer = game.dailyOffer();
+  if (!offer) return null;
+  const days = game.constructor.DAILY.map((r, i) => {
+    const n = i + 1;
+    const state = n < offer.day ? 'got' : n === offer.day ? 'today' : '';
+    const label = [r.credits && fmtC(r.credits), r.dilithium && `${r.dilithium} D`, r.research && `${r.research} RP`].filter(Boolean).join('<br>');
+    return `<div class="daily-day ${state}"><span>Day ${n}</span><b>${label}</b></div>`;
+  }).join('');
+  const m = modal({
+    title: offer.streak > 1 ? `Day ${offer.streak} streak!` : 'Daily supply drop', sub: 'Starfleet Logistics',
+    body: `<p class="dim" style="margin-top:0;line-height:1.6">Report for duty every day to keep the streak going — day seven pays the most.</p>
+      <div class="daily-grid">${days}</div>`,
+    footer: '<button class="btn primary" data-claim>Claim reward</button>',
+  });
+  m.el.querySelector('[data-claim]').onclick = () => {
+    const got = game.claimDaily();
+    if (got) {
+      audio.upgrade();
+      const r = got.reward;
+      toast(`Supply drop: ${[r.credits && fmtC(r.credits), r.dilithium && r.dilithium + ' D', r.research && r.research + ' RP'].filter(Boolean).join(' · ')}`, 'good', 3600);
+    }
+    m.close();
+  };
+  return m;
+}
+
+/* ------------------------------------------------------------------ account */
+export async function showAccount(app) {
+  const cloud = await import('../core/cloud.js');
+  const g = app.game;
+  if (!cloud.cloudConfigured()) {
+    const m = modal({
+      title: 'Captain\u2019s Account', sub: 'Cloud saves · leaderboard',
+      body: `<p class="dim" style="line-height:1.65;margin-top:0">Accounts are switched off in this build. Your progress is saved on this device.</p>
+        <div class="codex-entry"><h4>For the game\u2019s owner</h4><p>Create a free Supabase project, run <code>supabase/schema.sql</code>, then set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> (see README → Accounts).</p></div>`,
+      footer: '<button class="btn ghost" data-close2>Close</button>',
+    });
+    m.el.querySelector('[data-close2]').onclick = () => m.close();
+    return;
+  }
+  await cloud.initCloud();
+  const u = cloud.user();
+  if (u) return accountSignedIn(app, cloud, u);
+  const m = modal({
+    title: 'Captain\u2019s Account', sub: 'Sign in to sync across devices',
+    body: `
+      <div class="tabs q-tabs" role="tablist">
+        <button class="tab active" data-acc="in">Sign in</button>
+        <button class="tab" data-acc="up">Create account</button>
+        <button class="tab" data-acc="link">Email link</button>
+      </div>
+      <form class="acc-form" data-acc-form autocomplete="on">
+        <div class="field" data-f="captain" hidden><label for="acc-captain">Captain name (leaderboard)</label><input type="text" id="acc-captain" maxlength="24" autocomplete="nickname"></div>
+        <div class="field"><label for="acc-email">Email</label><input type="text" id="acc-email" inputmode="email" autocomplete="email" required></div>
+        <div class="field" data-f="pw"><label for="acc-pw">Password</label><input type="password" id="acc-pw" minlength="8" autocomplete="current-password"></div>
+        <p class="tiny" data-acc-msg style="min-height:16px;margin:4px 0 0"></p>
+        <button class="btn primary wide" type="submit" data-acc-go>Sign in</button>
+      </form>`,
+    footer: '<button class="btn ghost" data-close2>Not now</button>',
+  });
+  const E = m.el;
+  let mode = 'in';
+  const setMode = (k) => {
+    mode = k;
+    E.querySelectorAll('[data-acc]').forEach((t) => t.classList.toggle('active', t.dataset.acc === k));
+    E.querySelector('[data-f="captain"]').hidden = k !== 'up';
+    E.querySelector('[data-f="pw"]').hidden = k === 'link';
+    E.querySelector('#acc-pw').autocomplete = k === 'up' ? 'new-password' : 'current-password';
+    E.querySelector('[data-acc-go]').textContent = k === 'in' ? 'Sign in' : k === 'up' ? 'Create account' : 'Email me a sign-in link';
+  };
+  E.querySelectorAll('[data-acc]').forEach((t) => t.addEventListener('click', () => setMode(t.dataset.acc)));
+  const msg = (t, bad) => { const n = E.querySelector('[data-acc-msg]'); n.textContent = t; n.style.color = bad ? 'var(--red)' : 'var(--green)'; };
+  E.querySelector('[data-acc-form]').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = E.querySelector('#acc-email').value.trim();
+    const pw = E.querySelector('#acc-pw').value;
+    const btn = E.querySelector('[data-acc-go]');
+    btn.disabled = true;
+    msg('Contacting Starfleet\u2026');
+    const res = mode === 'in' ? await cloud.signIn(email, pw)
+      : mode === 'up' ? await cloud.signUp(email, pw, E.querySelector('#acc-captain').value)
+      : await cloud.magicLink(email);
+    btn.disabled = false;
+    if (!res.ok) { msg(res.why, true); audio.error?.(); return; }
+    if (mode === 'link') { msg('Check your inbox for the sign-in link.'); return; }
+    if (res.needsConfirm) { msg('Account created — confirm the email we sent, then sign in.'); return; }
+    m.close();
+    audio.upgrade();
+    toast('Signed in', 'good');
+    await reconcileCloudSave(app, cloud);
+    accountSignedIn(app, cloud, cloud.user());
+  });
+  E.querySelector('[data-close2]').onclick = () => m.close();
+}
+
+/** After sign-in: offer the cloud save if it is newer than this device's. */
+export async function reconcileCloudSave(app, cloud) {
+  const res = await cloud.pullSave();
+  const g = app.game;
+  if (!res.ok) return;
+  if (!res.save) { await cloud.pushSave(g.state); return; }
+  const cloudAt = Date.parse(res.updatedAt || 0) || 0;
+  if (cloudAt <= (g.state.lastSave || 0) + 5000) { await cloud.pushSave(g.state); return; }
+  const { confirmModal } = await import('./dom.js');
+  const yes = await confirmModal({
+    title: 'Load your cloud save?',
+    body: `Your account has progress from ${new Date(cloudAt).toLocaleString()}, newer than this device. Load it here? (This device\u2019s save will be replaced.)`,
+    ok: 'Load cloud save', cancel: 'Keep this device',
+  });
+  if (yes) app.loadSaveData?.(res.save);
+  else await cloud.pushSave(g.state);
+}
+
+function accountSignedIn(app, cloud, u) {
+  const g = app.game;
+  const captain = u.user_metadata?.captain || 'Captain';
+  const m = modal({
+    title: captain, sub: 'Captain\u2019s Account',
+    body: `
+      <div class="setting-row"><div><div class="nm">Signed in</div><div class="ds">${escapeHtml(u.email || '')}</div></div><span class="chip green">Cloud sync on</span></div>
+      <div class="setting-row"><div><div class="nm">Sync now</div><div class="ds">Upload this device\u2019s progress and leaderboard score</div></div><button class="btn sm" data-sync>Sync</button></div>
+      <div class="setting-row"><div><div class="nm">Load from cloud</div><div class="ds">Replace this device\u2019s save with your account\u2019s</div></div><button class="btn sm" data-pull>Load</button></div>
+      <div class="setting-row"><div><div class="nm">Leaderboard</div><div class="ds">Top captains by experience</div></div><button class="btn sm" data-lb>Open</button></div>
+      <div class="setting-row" style="border-bottom:0"><div><div class="nm">Sign out</div><div class="ds">Your local save stays on this device</div></div><button class="btn sm danger" data-out>Sign out</button></div>`,
+    footer: '<button class="btn ghost" data-close2>Close</button>',
+  });
+  const E = m.el;
+  E.querySelector('[data-sync]').onclick = async () => {
+    const a = await cloud.pushSave(g.state);
+    const b = await cloud.pushScore(g, captain);
+    toast(a.ok && b.ok ? 'Synced to the cloud' : (a.why || b.why), a.ok && b.ok ? 'good' : 'warn');
+  };
+  E.querySelector('[data-pull]').onclick = async () => {
+    const r = await cloud.pullSave();
+    if (!r.ok || !r.save) { toast(r.why || 'No cloud save yet', 'warn'); return; }
+    m.close();
+    app.loadSaveData?.(r.save);
+  };
+  E.querySelector('[data-lb]').onclick = () => { m.close(); showLeaderboard(); };
+  E.querySelector('[data-out]').onclick = async () => { await cloud.signOut(); m.close(); toast('Signed out', 'good'); };
+  E.querySelector('[data-close2]').onclick = () => m.close();
+}
+
+export async function showLeaderboard() {
+  const cloud = await import('../core/cloud.js');
+  const res = await cloud.topScores(25);
+  const me = cloud.user()?.id;
+  const rows = res.ok ? res.rows : [];
+  const m = modal({
+    title: 'Leaderboard', sub: 'Top captains',
+    body: res.ok ? (rows.length ? `<table class="lb"><thead><tr><th>#</th><th>Captain</th><th>Rank</th><th>XP</th><th>Kills</th><th>Systems</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr class="${r.user_id === me ? 'me' : ''}"><td>${i + 1}</td><td>${escapeHtml(r.captain)}</td><td>${escapeHtml(r.rank)}</td><td>${fmt(r.xp)}</td><td>${fmt(r.kills)}</td><td>${r.systems}</td></tr>`).join('')}
+      </tbody></table>` : '<p class="dim">No captains yet — be the first. Sync from your account to post a score.</p>')
+      : `<p class="dim">${escapeHtml(res.why)}</p>`,
+    footer: '<button class="btn ghost" data-close2>Close</button>',
   });
   m.el.querySelector('[data-close2]').onclick = () => m.close();
 }

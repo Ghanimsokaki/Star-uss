@@ -72,3 +72,36 @@ test('planet temperatures fit their class', () => {
     }
   }
 });
+
+test('daily reward: claim once a day, streak grows on consecutive days and resets after a gap', () => {
+  const g = new Game();
+  const d1 = new Date(2026, 10, 10, 9);
+  const o1 = g.claimDaily(d1);
+  assert.equal(o1.streak, 1);
+  assert.equal(g.claimDaily(d1), null, 'second claim the same day pays nothing');
+  assert.equal(g.claimDaily(new Date(2026, 10, 11, 20)).streak, 2);
+  assert.equal(g.claimDaily(new Date(2026, 10, 14, 8)).streak, 1, 'missed days reset the streak');
+});
+
+test('kill streak multiplier scales the payout', () => {
+  const g = new Game();
+  const enemy = { reward: { credits: 100, dilithium: 10, xp: 20 } };
+  const r = g.recordKill(enemy, { mult: 2 });
+  assert.deepEqual(r, { credits: 200, dilithium: 20, xp: 40 });
+});
+
+test('designing a ship: stats, price, commission and reload', async () => {
+  const { DEFAULT_DESIGN, sanitizeDesign, statsForDesign, registerCustomClass } = await import('../src/data/designer.js');
+  const { SHIP_CLASSES } = await import('../src/data/ships.js');
+  const bad = sanitizeDesign({ name: '<script>x', saucer: 99, nacelles: 3, hullColor: 'red' });
+  assert.ok(!bad.name.includes('<') && bad.saucer <= 1.9 && bad.nacelles === 2 && bad.hullColor === DEFAULT_DESIGN.hullColor);
+  const fast = statsForDesign({ ...DEFAULT_DESIGN, nacelles: 4, nacelleLen: 3.6 });
+  assert.ok(fast.speed > statsForDesign(DEFAULT_DESIGN).speed);
+  const g = new Game();
+  g.state.credits = 1e6;
+  const res = g.commissionDesign({ ...DEFAULT_DESIGN, name: 'U.S.S. Test' });
+  assert.ok(res.ok && g.state.shipId === 'custom' && SHIP_CLASSES.custom.hullName === 'U.S.S. Test');
+  assert.ok(g.stats.hull > 0);
+  registerCustomClass(null);
+  assert.equal(SHIP_CLASSES.custom, undefined);
+});

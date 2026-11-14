@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { nebulaTexture, environmentTexture, starSpriteTexture, glowTexture, planetTexture, cloudTexture, ringTexture, starfield } from './textures.js';
 import { disposeObject3D } from './ships3d.js';
+import { device } from '../core/device.js';
 
 let envMap = null;
 export function getEnvironment(renderer) {
@@ -23,13 +24,62 @@ export function glowSprite(color = '#ffffff', scale = 4, opacity = 0.8) {
   return s;
 }
 
-export function makeSky(seed = 1, radius = 60000) {
+/* ------------------------------------------------------- photographic maps
+   Planet surfaces and the Milky Way are real imagery from Solar System Scope
+   (CC BY 4.0, based on NASA mission data) — see docs/CREDITS.md. They stream
+   in after the scene is up; the procedural texture shows until then and stays
+   as the fallback if a file is missing. */
+const SPACE = '/assets/space/';
+const texCache = new Map();
+const loader = new THREE.TextureLoader();
+
+/** Load (once) and cache a texture; resolves to null on failure. */
+export function spaceTexture(file, { srgb = true } = {}) {
+  if (texCache.has(file)) return texCache.get(file);
+  const p = new Promise((resolve) => {
+    loader.load(SPACE + file, (t) => {
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      resolve(t);
+    }, undefined, () => resolve(null));
+  });
+  texCache.set(file, p);
+  return p;
+}
+
+/** Which photographic surface suits each planet class (picked by seed). */
+export const REAL_SURFACES = {
+  desert: [{ f: 'mars.jpg' }],
+  volcanic: [{ f: 'venus-surface.jpg', tint: '#ffb48c' }, { f: 'mercury.jpg', tint: '#ff9a70' }],
+  barren: [{ f: 'mercury.jpg' }, { f: 'moon.jpg' }, { f: 'ceres.jpg' }],
+  gas: [{ f: 'jupiter.jpg' }, { f: 'saturn.jpg', ring: true }, { f: 'neptune.jpg' }, { f: 'uranus.jpg' }],
+  toxic: [{ f: 'venus-atmosphere.jpg', tint: '#d8f07a' }],
+  ice: [{ f: 'eris.jpg', tint: '#dff2ff' }, { f: 'haumea.jpg', tint: '#e6f6ff' }],
+  rogue: [{ f: 'makemake.jpg', tint: '#7d8fb0' }, { f: 'eris.jpg', tint: '#6b7da0' }],
+};
+export function realSurfaceFor(typeId, seed = 0) {
+  const list = REAL_SURFACES[typeId];
+  if (!list) return null;
+  return list[Math.abs(Math.floor(seed)) % list.length];
+}
+
+export function makeSky(seed = 1, radius = 60000, { real = true, hiRes = device.tier !== 'low' && device.form !== 'phone' } = {}) {
   const tex = nebulaTexture(seed);
   const geo = new THREE.SphereGeometry(radius, 48, 32);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false, color: new THREE.Color(0.85, 0.9, 1) });
   const m = new THREE.Mesh(geo, mat);
   m.name = 'sky';
   m.frustumCulled = false;
+  if (real) {
+    // the real Milky Way; the procedural nebula stays until it arrives
+    spaceTexture(hiRes ? 'milky-way-4k.jpg' : 'milky-way-2k.jpg').then((t) => {
+      if (!t) return;
+      mat.map = t;
+      mat.color.setRGB(0.9, 0.92, 1);
+      mat.needsUpdate = true;
+      m.rotation.set(0.35 + (seed % 5) * 0.2, seed * 0.7, 0.62);
+    });
+  }
   return m;
 }
 
@@ -91,6 +141,18 @@ export function makePlanet({ typeId = 'm', seed = 1, radius = 20, quality = 1, n
   g.add(body);
   g.userData.body = body;
 
+  const real = realSurfaceFor(typeId, seed);
+  if (real) {
+    spaceTexture(real.f).then((t) => {
+      if (!t) return;
+      mat.map = t;
+      if (real.tint) mat.color.set(real.tint);
+      mat.roughness = typeId === 'gas' ? 0.75 : 0.92;
+      mat.needsUpdate = true;
+    });
+    if (real.ring && g.userData.ring) g.userData.useSaturnRing = true;
+  }
+
   if (['m', 'ocean', 'ice', 'toxic'].includes(typeId)) {
     const clouds = new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.015, 56, 36),
@@ -129,6 +191,26 @@ export function makePlanet({ typeId = 'm', seed = 1, radius = 20, quality = 1, n
     ring.rotation.x = Math.PI / 2 + 0.28;
     g.add(ring);
     g.userData.ring = ring;
+    const real2 = realSurfaceFor(typeId, seed);
+    if (real2?.ring) {
+      // Saturn's real ring profile: remap UVs so u runs from inner to outer edge
+      const pos = ring.geometry.attributes.position, uv = ring.geometry.attributes.uv;
+      const r0 = radius * 1.5, r1 = radius * 2.5;
+      for (let i = 0; i < pos.count; i++) {
+        const r = Math.hypot(pos.getX(i), pos.getY(i));
+        uv.setXY(i, (r - r0) / (r1 - r0), 0.5);
+      }
+      uv.needsUpdate = true;
+      spaceTexture('saturn-ring.png').then((t) => {
+        if (!t) return;
+        ring.material.map = t;
+        ring.material.opacity = 0.95;
+        ring.material.needsUpdate = true;
+      });
+    } else if (real2) {
+      // only Saturn-like giants keep a bright ring; the others get a faint one
+      ring.material.opacity = 0.18;
+    }
   }
   g.userData.radius = radius;
   g.userData.typeId = typeId;

@@ -95,7 +95,10 @@ export class GalaxyScene {
       }
 
       // click/hover target sphere (invisible)
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(Math.max(9, size * 1.3), 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+      // material.visible = false: never drawn (it used to cost a draw call per
+      // system at opacity 0) but the raycaster still hits it
+      const hit = new THREE.Mesh(this._hitGeo ||= new THREE.SphereGeometry(1, 12, 8), this._hitMat ||= new THREE.MeshBasicMaterial({ visible: false }));
+      hit.scale.setScalar(Math.max(9, size * 1.3));
       hit.userData.systemId = sys.id;
       g.add(hit);
       g.userData.hit = hit;
@@ -158,10 +161,45 @@ export class GalaxyScene {
     this._buildUI();
     this._refresh();
     this._bindings = [this.game.bus.on('change', () => { this._refresh(); })];
+    this._bindPick();
     audio.startMusic();
   }
 
+  /**
+   * Tap or click a star in the 3D map to select it. (Only the name labels were
+   * clickable before, and most systems have no label.) A drag is an orbit, not
+   * a tap, so the press must end close to where it started.
+   */
+  _bindPick() {
+    const canvas = this.app.canvas;
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    let down = null;
+    const onDown = (e) => { if (e.target === canvas) down = { x: e.clientX, y: e.clientY, t: performance.now() }; };
+    const onUp = (e) => {
+      if (!down || e.target !== canvas) { down = null; return; }
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const quick = performance.now() - down.t < 600;
+      down = null;
+      if (moved > 8 || !quick) return;
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, this.camera);
+      const hits = [...this._nodes.values()].map((n) => n.userData.hit).filter(Boolean);
+      const hit = ray.intersectObjects(hits, false)[0];
+      if (hit?.object.userData.systemId) {
+        audio.ui();
+        this._selectSystem(hit.object.userData.systemId);
+      }
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    this._unpick = () => { canvas.removeEventListener('pointerdown', onDown); window.removeEventListener('pointerup', onUp); };
+  }
+
   exit() {
+    this._unpick?.();
+    this._unpick = null;
     if (this._enterKey) window.removeEventListener('keydown', this._enterKey);
     this._enterKey = null;
     this._bindings?.forEach((off) => off());
@@ -196,7 +234,8 @@ export class GalaxyScene {
           <div class="panel-body scroll" id="sys-detail"></div>
           <div class="panel-foot" id="gal-foot"></div>
         </aside>
-        <div class="globe-hint on" style="opacity:.75">Drag to orbit · scroll / pinch to zoom · tap a star to select</div>
+        <div class="globe-hint on" id="gal-hint" style="opacity:.75">Drag to orbit · scroll / pinch to zoom · tap a star to select</div>
+        <div class="warp-bar" id="warp-bar" hidden></div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
     // panels are drawers: closed by default so the 3D view gets the space
@@ -324,6 +363,8 @@ export class GalaxyScene {
         <p style="margin-top:6px">Event horizon gravity well. Approach within two radii and your hull will be torn apart. Starfleet recommends Singularity Physics research before entry.</p>
       </div>` : ''}`;
 
+    this._refreshWarpBar(sys, current, can, cost);
+
     const foot = $('#gal-foot', this.ui);
     if (current) {
       foot.innerHTML = `<button class="btn primary wide" id="enter-sys">Enter system · Launch</button>`;
@@ -339,6 +380,40 @@ export class GalaxyScene {
         row.addEventListener('dblclick', () => { if (can.ok) this._engage(sys); });
       });
     }
+  }
+
+  /**
+   * The bar at the bottom of the map. The Navigation drawer holds the full
+   * detail, but it is closed by default — without this, tapping a star on a
+   * phone selected it and showed no way to actually go there.
+   */
+  _refreshWarpBar(sys, current, can, cost) {
+    const bar = $('#warp-bar', this.ui);
+    const hint = $('#gal-hint', this.ui);
+    if (!bar) return;
+    const g = this.game;
+    const fi = FACTION_INFO[sys.faction] || FACTION_INFO.neutral;
+    const dist = Math.hypot(sys.x - g.system.x, sys.y - g.system.y);
+    bar.hidden = false;
+    if (hint) hint.hidden = true;
+    bar.innerHTML = `
+      <div class="wb-info">
+        <div class="wb-name">${escapeHtml(sys.name)} ${current ? '<span class="chip green">You are here</span>' : ''}</div>
+        <div class="wb-sub"><span style="color:${fi.color}">${escapeHtml(fi.name)}</span> · ${g.difficultyLabelFor(sys)} threat${current ? '' : ` · ${dist.toFixed(0)} ly · <b class="cyan">${cost} D</b>`}</div>
+        ${!current && !can.ok ? `<div class="wb-why">${escapeHtml(can.why)}</div>` : ''}
+      </div>
+      <div class="wb-actions">
+        <button class="btn ghost sm" data-wb="info" title="Full system details">Details</button>
+        ${current
+          ? '<button class="btn primary" data-wb="launch">🚀 Launch</button>'
+          : `<button class="btn primary" data-wb="warp" ${can.ok ? '' : 'disabled'}>✧ Engage warp</button>`}
+      </div>`;
+    bar.querySelector('[data-wb="launch"]')?.addEventListener('click', () => { audio.confirm(); this.app.setScene('system'); });
+    bar.querySelector('[data-wb="warp"]')?.addEventListener('click', () => this._engage(sys));
+    bar.querySelector('[data-wb="info"]')?.addEventListener('click', () => {
+      audio.ui();
+      this.drawers?.open('right');
+    });
   }
 
   _engage(sys) {

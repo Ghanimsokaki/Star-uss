@@ -3,6 +3,7 @@ import { initDrawers } from '../ui/drawers.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EarthGlobe, vec3ToLatLon, latLonToVec3, EARTH_RADIUS } from '../art/earth.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
+import { loadGLB } from '../art/imported.js';
 import { el, $, $$, toast, fmtC, fmt, modal } from '../ui/dom.js';
 import { DISTRICT_ORDER, DISTRICTS, districtUpgradeCost } from '../data/tech.js';
 import { audio } from '../core/audio.js';
@@ -69,6 +70,7 @@ export class EarthScene {
     this.controls.autoRotateSpeed = 0.32;
     this.controls.target.set(0, 0, 0);
     this._buildingsShown = false;
+    this._loadISS();
     this._built = true;
   }
 
@@ -98,7 +100,7 @@ export class EarthScene {
   }
 
   _subscribe() {
-    this._bindings.push(this.game.bus.on('change', () => this._refreshPanels()));
+    this._bindings.push(this.game.bus.on('change', () => { this._refreshPanels(); this._syncGlobeExtras(); }));
     this._bindings.push(this.game.bus.on('customize', () => this._refreshPanels()));
   }
 
@@ -129,10 +131,25 @@ export class EarthScene {
         </aside>
 
         <div class="globe-hint" id="globe-hint"></div>
+        <div class="globe-layers panel" id="globe-layers" hidden>
+          <div class="gl-head"><b>Globe layers</b><button class="close-x" id="layers-close" aria-label="Close layers">✕</button></div>
+          ${[['clouds', 'Cloud cover'], ['lights', 'City lights'], ['satellites', 'Orbital traffic'], ['shield', 'Planetary shield'], ['grid', 'Orbital grid'], ['labels', 'District labels']]
+            .map(([k, n]) => `<label class="gl-row"><input type="checkbox" data-layer="${k}" checked> <span>${n}</span></label>`).join('')}
+          <div class="gl-sun">
+            <div class="row between"><span>Sun position</span><b id="sun-read">Live</b></div>
+            <input type="range" min="0" max="24" step="0.25" value="12" id="sun-range" aria-label="Time of day">
+            <button class="btn sm ghost" id="sun-live">Live sun</button>
+          </div>
+          <div class="gl-stats" id="gl-stats"></div>
+        </div>
         <div class="globe-tools">
-          <button class="icon-btn" id="tool-rotate" title="Auto-rotate">⟳</button>
-          <button class="icon-btn" id="tool-reset" title="Reset view">◎</button>
-          <button class="icon-btn" id="tool-launch" title="Launch">🚀</button>
+          <button class="icon-btn" id="tool-layers" title="Layers, sun and orbital traffic" aria-label="Globe layers">☰</button>
+          <button class="icon-btn" id="tool-next" title="Fly to the next district" aria-label="Next district">⌖</button>
+          <button class="icon-btn" id="tool-zoomin" title="Zoom in" aria-label="Zoom in">＋</button>
+          <button class="icon-btn" id="tool-zoomout" title="Zoom out" aria-label="Zoom out">－</button>
+          <button class="icon-btn" id="tool-rotate" title="Auto-rotate" aria-label="Auto-rotate">⟳</button>
+          <button class="icon-btn" id="tool-reset" title="Reset view" aria-label="Reset view">◎</button>
+          <button class="icon-btn" id="tool-launch" title="Launch" aria-label="Launch starship">🚀</button>
         </div>
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
@@ -157,9 +174,105 @@ export class EarthScene {
       audio.ui();
     };
     $('#tool-rotate', this.ui).classList.toggle('active', this.controls.autoRotate);
+    this._bindGlobeTools();
 
     this._refreshPanels();
     this._bindGlobeInput();
+  }
+
+  /**
+   * The real International Space Station (NASA 3D Resources, public domain)
+   * in a 51.6° orbit. Skipped on low-end devices — it is 174k triangles.
+   */
+  async _loadISS() {
+    if (this.app.viewport.quality === 'low') return;
+    const { scene } = await loadGLB('/assets/nasa/iss.glb');
+    if (!scene || !this.scene) return;
+    scene.traverse((o) => {
+      if (o.isMesh) {
+        o.material.envMapIntensity = 1.2;
+        if ('metalness' in o.material) o.material.metalness = Math.min(0.8, o.material.metalness ?? 0.5);
+      }
+    });
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3()).length();
+    scene.scale.setScalar(0.9 / size);
+    const pivot = new THREE.Group();
+    pivot.rotation.x = THREE.MathUtils.degToRad(51.6);
+    const holder = new THREE.Group();
+    holder.position.set(EARTH_RADIUS * 1.06, 0, 0);
+    holder.add(scene);
+    pivot.add(holder);
+    this.scene.add(pivot);
+    this.iss = { pivot, holder };
+  }
+
+  /** Layers, sun, traffic, shield, district hopping and zoom. */
+  _bindGlobeTools() {
+    const ui = this.ui;
+    const layers = $('#globe-layers', ui);
+    const prefs = (this.game.state.settings.globe ||= {});
+    $('#tool-layers', ui).onclick = () => { audio.ui(); layers.hidden = !layers.hidden; $('#tool-layers', ui).classList.toggle('active', !layers.hidden); };
+    $('#layers-close', ui).onclick = () => { layers.hidden = true; $('#tool-layers', ui).classList.remove('active'); };
+    ui.querySelectorAll('[data-layer]').forEach((box) => {
+      const k = box.dataset.layer;
+      box.checked = prefs[k] !== false;
+      const apply = () => {
+        prefs[k] = box.checked;
+        if (k === 'labels') { if (this._labels) this._labels.hidden = !box.checked; } else this.globe.setLayer(k, box.checked);
+      };
+      box.onchange = () => { apply(); audio.ui(); this.game.scheduleSave(); };
+      apply();
+    });
+    const range = $('#sun-range', ui);
+    const read = $('#sun-read', ui);
+    const fmtH = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+    range.oninput = () => { this._sunHour = +range.value; this.globe.setSunHour(this._sunHour); read.textContent = fmtH(this._sunHour); };
+    $('#sun-live', ui).onclick = () => { this._sunHour = null; this.globe.setSunHour(this._liveHour()); read.textContent = 'Live'; audio.ui(); };
+    $('#tool-next', ui).onclick = () => this._flyToNextDistrict();
+    $('#tool-zoomin', ui).onclick = () => this._zoom(0.8);
+    $('#tool-zoomout', ui).onclick = () => this._zoom(1.25);
+    this._syncGlobeExtras();
+  }
+
+  _liveHour() { const d = new Date(); return d.getHours() + d.getMinutes() / 60; }
+
+  /** Traffic and shield follow the civilisation; called whenever it changes. */
+  _syncGlobeExtras() {
+    if (!this.globe) return;
+    const ds = this.game.state.civ.districts;
+    const lvl = (type) => ds.filter((d) => d.type === type).reduce((a, d) => a + d.level, 0);
+    this.globe.setTraffic(8 + ds.length * 4 + lvl('shipyard') * 6);
+    this.globe.setShieldLevel(lvl('defense'));
+    const prefs = this.game.state.settings.globe || {};
+    this.globe.setLayer('satellites', prefs.satellites !== false);
+    this.globe.setLayer('shield', prefs.shield !== false);
+    const st = this.ui && $('#gl-stats', this.ui);
+    if (st) st.innerHTML = `<span>${this.globe.satellites?.children.length || 0} craft in orbit</span><span>Shield ${lvl('defense') ? `level ${lvl('defense')}` : 'offline'}</span>`;
+  }
+
+  _zoom(f) {
+    const c = this.controls;
+    const dir = this.camera.position.clone().sub(c.target);
+    const d = Math.min(c.maxDistance, Math.max(c.minDistance, dir.length() * f));
+    this.camera.position.copy(c.target).add(dir.setLength(d));
+    c.update();
+    audio.ui();
+  }
+
+  _flyToNextDistrict() {
+    const ds = this.game.state.civ.districts;
+    if (!ds.length) return;
+    this._hop = ((this._hop ?? -1) + 1) % ds.length;
+    const d = ds[this._hop];
+    const p = this.globe.districtWorldPosition(d.lat, d.lon);
+    const dist = Math.max(this.controls.minDistance + 2, 20);
+    this._flyTo = { from: this.camera.position.clone(), to: p.clone().setLength(dist), t: 0 };
+    this.controls.autoRotate = false;
+    $('#tool-rotate', this.ui)?.classList.remove('active');
+    this.globe.setSelected?.(d.id);
+    toast(`${DISTRICTS[d.type]?.name || 'District'} · level ${d.level}`, 'good', 1600);
+    audio.ui();
   }
 
   _launch() {
@@ -490,7 +603,24 @@ export class EarthScene {
   update(dt, t) {
     if (!this._built) return;
     this.time += dt;
+    if (this._sunHour == null && this.globe.setSunHour && (this._sunTick = (this._sunTick || 0) + dt) > 5) {
+      this._sunTick = 0;
+      this.globe.setSunHour(this._liveHour());
+    }
+    if (this._flyTo) {
+      const f = this._flyTo;
+      f.t = Math.min(1, f.t + dt * 1.4);
+      const k = f.t * f.t * (3 - 2 * f.t);
+      this.camera.position.lerpVectors(f.from, f.to, k).setLength(f.from.length() + (f.to.length() - f.from.length()) * k);
+      if (f.t >= 1) this._flyTo = null;
+    }
     this.globe.update(dt, t);
+    if (this.iss) {
+      // one orbit every ~40 s, nose along the velocity
+      this.iss.pivot.rotation.y += dt * 0.155;
+      this.iss.holder.rotation.y = -Math.PI / 2;
+      this.iss.pivot.visible = (this.game.state.settings.globe?.satellites !== false);
+    }
     this.globe.animateMarkers(this.time);
     this.globe.setGhostPulse(this.time);
     this.controls.update();
