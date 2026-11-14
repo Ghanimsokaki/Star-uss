@@ -13,6 +13,7 @@ import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
+import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
@@ -110,6 +111,11 @@ export class SystemScene {
       this.game.bus.on('mission', (d) => {
         toast(`Mission complete: ${d.mission.title}`, 'good', 4000);
         this.addLog(`Mission complete — ${d.mission.title}`, 'good');
+        this._refreshMissionLine();
+      }),
+      this.game.bus.on('contract', (d) => {
+        this.addLog(`Contract fulfilled — ${d.contract.title}`, 'good');
+        this._refreshMissionLine();
       }),
     ];
     this.app.input.bindActions(this.ui);
@@ -451,9 +457,11 @@ export class SystemScene {
                 <button class="btn sm ghost" id="leave-btn" style="min-height:26px;padding:4px 8px;font-size:9px">Galaxy map</button>
               </div>
             </div>
-            <div class="vitals" style="padding:8px 12px">
+            <div class="vitals orders-card" id="orders-card" style="padding:8px 12px" title="Open the mission log (M)">
               <div class="tiny upper faint" style="font-size:8.5px">Current orders</div>
               <div class="small" id="mission-line" style="line-height:1.35">—</div>
+              <div class="bar thin amber" id="mission-bar" hidden><i style="width:0%"></i></div>
+              <div class="o-sub"><span id="mission-prog"></span><span id="contract-count"></span></div>
             </div>
           </div>
 
@@ -508,6 +516,7 @@ export class SystemScene {
     document.getElementById('ui').appendChild(this.ui);
     this._labelsEl = $('#obj-labels', this.ui);
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
+    $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
     $('#warp-btn', this.ui).onclick = () => {
       audio.ui();
@@ -564,6 +573,19 @@ export class SystemScene {
     if (!node) return;
     node.textContent = m ? m.title : 'All orders complete';
     node.style.color = m ? 'var(--ink)' : 'var(--green)';
+    const prog = m ? this.game.progressOf(m) : null;
+    const bar = $('#mission-bar', this.ui);
+    const txt = $('#mission-prog', this.ui);
+    if (bar) {
+      bar.hidden = !prog;
+      if (prog) bar.querySelector('i').style.width = `${Math.round((prog[0] / Math.max(1, prog[1])) * 100)}%`;
+    }
+    if (txt) txt.textContent = prog ? `${prog[0]} / ${prog[1]}` : '';
+    const cc = $('#contract-count', this.ui);
+    if (cc) {
+      const all = this.game.contracts;
+      cc.textContent = `Contracts ${all.filter((c) => c.done).length}/${all.length}`;
+    }
   }
 
   _buildObjectLabels() {
@@ -1416,6 +1438,7 @@ export class SystemScene {
     this.game.state.credits = Math.max(0, this.game.state.credits - loss);
     this.game.state.stats.deaths++;
     this.game.save(true);
+    this.game.checkMissions();
     setTimeout(() => {
       const m = modal({
         title: 'Ship Destroyed', sub: 'Starfleet Command',

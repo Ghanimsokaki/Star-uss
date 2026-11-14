@@ -9,6 +9,7 @@ export const PLANET_TYPES = {
     colors: ['#2f6fae', '#3f8a52', '#c9c3a6'], water: 0.7, habitability: 0.95,
     lore: 'A rare world with liquid water, a stable magnetosphere and a breathable atmosphere. Prime colony candidate.',
     yield: { credits: 420, dilithium: 16, research: 26 },
+    temp: [-10, 38],
   },
   ocean: {
     id: 'ocean', name: 'Class-O Pelagic World', short: 'Ocean World',
@@ -16,6 +17,7 @@ export const PLANET_TYPES = {
     colors: ['#123f6e', '#1f6fa8', '#9fd8e8'], water: 0.97, habitability: 0.7,
     lore: 'A world almost entirely covered by a single world-ocean. Storms the size of continents roam the equator.',
     yield: { credits: 360, dilithium: 10, research: 34 },
+    temp: [2, 34],
   },
   desert: {
     id: 'desert', name: 'Class-K Arid World', short: 'Desert World',
@@ -23,6 +25,7 @@ export const PLANET_TYPES = {
     colors: ['#b0743a', '#d8a76a', '#7a4c28'], water: 0.05, habitability: 0.35,
     lore: 'Sun-blasted rock and dust seas. Deep aquifers and rare mineral veins make it worth the heat.',
     yield: { credits: 300, dilithium: 26, research: 18 },
+    temp: [25, 85],
   },
   ice: {
     id: 'ice', name: 'Class-P Glacial World', short: 'Ice World',
@@ -30,6 +33,7 @@ export const PLANET_TYPES = {
     colors: ['#9fc7de', '#dcecf5', '#5b7f96'], water: 0.2, habitability: 0.2,
     lore: 'Kilometres of ice over a liquid ocean. Cryo-volcanic geysers vent from the poles.',
     yield: { credits: 280, dilithium: 34, research: 28 },
+    temp: [-210, -40],
   },
   volcanic: {
     id: 'volcanic', name: 'Class-Y Volcanic World', short: 'Volcanic',
@@ -37,6 +41,7 @@ export const PLANET_TYPES = {
     colors: ['#7a2b1c', '#ff7a3d', '#2a1410'], water: 0, habitability: 0.05,
     lore: 'A young, violent world of lava seas. The crust is rich in duranium and other refractory metals.',
     yield: { credits: 340, dilithium: 30, research: 22 },
+    temp: [280, 640],
   },
   gas: {
     id: 'gas', name: 'Class-J Gas Giant', short: 'Gas Giant',
@@ -44,6 +49,7 @@ export const PLANET_TYPES = {
     colors: ['#c9a06a', '#e6d3b0', '#8a5a38'], water: 0, habitability: 0,
     lore: 'A banded giant with storm vortices older than human civilisation. Its upper atmosphere is a fuel refinery.',
     yield: { credits: 260, dilithium: 44, research: 24 },
+    temp: [-180, -90],
   },
   barren: {
     id: 'barren', name: 'Class-D Barren World', short: 'Barren',
@@ -51,6 +57,7 @@ export const PLANET_TYPES = {
     colors: ['#8d8b86', '#bdbab4', '#5a5955'], water: 0, habitability: 0,
     lore: 'An airless rock. Nothing lives here, but impact craters expose valuable mineral seams.',
     yield: { credits: 180, dilithium: 22, research: 10 },
+    temp: [-170, 240],
   },
   toxic: {
     id: 'toxic', name: 'Class-L Marginal World', short: 'Toxic',
@@ -58,6 +65,7 @@ export const PLANET_TYPES = {
     colors: ['#6b7a2c', '#b9c94a', '#3d4418'], water: 0.1, habitability: 0.08,
     lore: 'A chemical nightmare of acid rain and ammonia lakes. Sparse extremophile life clings to volcanic vents.',
     yield: { credits: 240, dilithium: 18, research: 40 },
+    temp: [40, 160],
   },
   rogue: {
     id: 'rogue', name: 'Rogue Planetary Mass', short: 'Rogue Planet',
@@ -65,6 +73,7 @@ export const PLANET_TYPES = {
     colors: ['#2b3a52', '#4a6480', '#131a24'], water: 0, habitability: 0,
     lore: 'A world flung from its star long ago, drifting through interstellar space with a heat signature nobody can explain.',
     yield: { credits: 400, dilithium: 48, research: 60 },
+    temp: [-240, -200],
   },
 };
 
@@ -142,7 +151,7 @@ function makePlanets(system, rng) {
       visualRadius: parseFloat(radius),
       moons: rng.int(0, 4),
       gravity: +(type.habitability * rng.range(0.6, 1.25) + 0.2).toFixed(2),
-      temperature: Math.round(rng.range(-210, 460)),
+      temperature: Math.round(rng.range(...(type.temp || [-210, 460]))),
       resources: {
         dilithium: Math.round(rng.range(4, 34) * (typeId === 'gas' ? 1.6 : 1)),
         minerals: Math.round(rng.range(20, 240)),

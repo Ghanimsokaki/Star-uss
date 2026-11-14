@@ -876,3 +876,68 @@ body.free-cam .touch-hint { display: none; }
   .planet-actions { gap: 8px; right: calc(10px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); }
   .planet-prompt { font-size: 10.5px; bottom: calc(92px + var(--safe-b)); max-width: 92vw; white-space: normal; text-align: center; }
 }
+
+/* ============================================================ readability + layout fixes */
+/* anything hidden with the attribute stays hidden, whatever display a class sets */
+[hidden] { display: none !important; }
+
+/* the title sits over a very bright accretion disk: give the copy a dark scrim */
+.title-screen::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(2,5,12,.88) 0%, rgba(2,5,12,.66) 34%, rgba(2,5,12,0) 64%),
+    linear-gradient(0deg, rgba(2,5,12,.55) 0%, rgba(2,5,12,0) 30%);
+}
+.title-screen .menu .btn:not(.primary) { background: rgba(6,14,26,.78); color: var(--ink); border-color: rgba(89,224,255,.32); }
+.title-screen .menu .btn:not(.primary):hover { background: rgba(14,30,50,.9); border-color: var(--cyan); }
+.title-screen .game-sub { color: #c6d6e6; text-shadow: 0 1px 12px rgba(0,0,0,.8); }
+.title-meta { z-index: 1; }
+
+/* toasts sit under the CAM / HIDE UI pair instead of underneath it */
+.toasts { top: calc(112px + var(--safe-t)); }
+
+/* a dialog covers the view buttons; they live outside #ui so z-index alone can't */
+body:has(.modal-layer) .view-controls,
+body:has(.big-overlay) .view-controls { display: none; }
+
+/* the keyboard strip collides with the action buttons on narrower screens */
+@media (max-width: 1499px) { .control-strip { display: none; } }
+
+/* ---------- quest log ---------- */
+.q-tabs { padding: 0 0 12px; }
+.q-tabs .tab { background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; color: var(--ink-dim); }
+.q-count { opacity: .6; margin-left: 4px; font-size: 9px; }
+.q-summary { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; margin-bottom: 12px;
+  font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+.q-summary b { font-family: var(--font-h); color: var(--ink); letter-spacing: .06em; }
+.q-summary .bar { grid-column: 1 / -1; }
+.quest-current { border-color: rgba(255,179,71,.45); margin-bottom: 14px;
+  background: linear-gradient(135deg, rgba(255,179,71,.08), rgba(255,179,71,0) 60%); }
+.q-hint { margin-top: 8px; color: var(--ink-faint); }
+.q-prog { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 10.5px; letter-spacing: .08em; color: var(--ink-dim); }
+.q-prog .bar { flex: 1; }
+.q-prog span { font-family: var(--font-h); min-width: 64px; text-align: right; }
+.quest-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.q-item { display: flex; gap: 12px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; }
+.q-item .q-num { flex: 0 0 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-h); font-size: 10px; border: 1px solid rgba(255,255,255,.18); color: var(--ink-faint); }
+.q-item .q-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.q-item .q-meta b { font-size: 12.5px; letter-spacing: .04em; }
+.q-item .q-meta small { font-size: 11px; color: var(--ink-faint); line-height: 1.4; }
+.q-item.done .q-num { background: rgba(98,242,166,.16); border-color: rgba(98,242,166,.5); color: var(--green); }
+.q-item.done .q-meta b { color: var(--ink-dim); }
+.q-item.cur { border-color: rgba(255,179,71,.4); background: rgba(255,179,71,.06); }
+.q-item.cur .q-num { border-color: var(--amber); color: var(--amber); }
+.q-item.locked { opacity: .45; }
+.codex-entry.contract.done { opacity: .6; }
+
+/* ---------- HUD: current orders card ---------- */
+.orders-card { cursor: pointer; pointer-events: auto; transition: border-color .15s; }
+.orders-card:hover { border-color: rgba(255,179,71,.45); }
+.orders-card .bar { margin-top: 6px; }
+.orders-card .o-sub { display: flex; justify-content: space-between; margin-top: 4px; font-size: 9.5px; letter-spacing: .1em; color: var(--ink-faint); }
+
+/* short windows: centre the title block instead of pushing its top off-screen */
+@media (max-height: 900px) and (min-width: 821px) {
+  .title-screen { align-items: center; overflow-y: auto; padding-top: 24px; padding-bottom: 24px; }
+}
