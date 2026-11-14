@@ -310,13 +310,13 @@ class ShipBuilder {
     pivot.add(body);
 
     // bussard collector at front (+Z)
-    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.95, 22, 12), new THREE.MeshPhysicalMaterial({
+    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.86, 22, 12), new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(this.mats.nacelleColor).lerp(new THREE.Color('#ff5a3c'), 0.55),
       emissive: new THREE.Color('#ff4b2b'), emissiveIntensity: 1.6,
       metalness: 0.2, roughness: 0.15, transmission: 0.35, transparent: true, opacity: 0.92, toneMapped: false,
     }));
-    bussard.position.z = len * 0.52;
-    bussard.scale.set(0.95, 0.95, 0.8);
+    bussard.position.z = len * 0.47;
+    bussard.scale.set(1, 1, 0.9);
     pivot.add(bussard);
     this.nacelles.push(bussard);
 
@@ -324,7 +324,9 @@ class ShipBuilder {
     const grille = new THREE.Mesh(new THREE.BoxGeometry(r * 0.34, r * 0.62, len * 0.62), this.mats.glow);
     grille.position.set(Math.sign(x) * r * 0.86, 0, -len * 0.04);
     pivot.add(grille);
-    const grilleGlow = new THREE.Mesh(new THREE.PlaneGeometry(r * 1.5, len * 0.7), this.mats.glowSoft);
+    // the plane is turned 90° about Y, so its local X runs along the nacelle (Z):
+    // width = length of the grille, height = a little taller than the grille
+    const grilleGlow = new THREE.Mesh(new THREE.PlaneGeometry(len * 0.68, r * 0.95), this.mats.glowSoft);
     grilleGlow.position.set(Math.sign(x) * r * 1.35, 0, -len * 0.04);
     grilleGlow.rotation.y = Math.sign(x) * Math.PI / 2;
     pivot.add(grilleGlow);
@@ -433,19 +435,19 @@ class ShipBuilder {
       this.group.add(bulb);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowTexture(color), color: new THREE.Color(color), transparent: true,
-        opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+        opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
       }));
       halo.position.set(...pos);
-      halo.scale.setScalar(size * 9);
+      halo.scale.setScalar(size * 5.5);
       this.group.add(halo);
       return bulb;
     };
     // port (red) / starboard (green) on the widest points of the saucer
-    mk('#ff5a4a', [-span, y, len * 0.28], 0.075);
-    mk('#5aff9a', [span, y, len * 0.28], 0.075);
+    mk('#ff5a4a', [-span, y, len * 0.28], 0.05);
+    mk('#5aff9a', [span, y, len * 0.28], 0.05);
     // white strobes fore and aft
-    mk('#eaf6ff', [0, y, len * 0.52], 0.06);
-    mk('#eaf6ff', [0, y * 0.7, -len * 0.46], 0.055);
+    mk('#eaf6ff', [0, y, len * 0.52], 0.04);
+    mk('#eaf6ff', [0, y * 0.7, -len * 0.46], 0.035);
   }
 
   finish(extra = {}) {

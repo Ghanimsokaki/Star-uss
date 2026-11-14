@@ -4,6 +4,18 @@ import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, TIM
 import { ENEMIES } from '../data/enemies.js';
 import { TECHS, TECH_ORDER, DISTRICTS, CODEX_ARTICLES } from '../data/tech.js';
 import { MISSIONS, RANK_TITLES } from '../data/missions.js';
+
+function rewardChips(r = {}) {
+  return `${r.credits ? `<span class="chip amber">+${fmtC(r.credits)}</span>` : ''}${r.dilithium ? `<span class="chip cyan">+${r.dilithium} dilithium</span>` : ''}${r.research ? `<span class="chip violet">+${fmt(r.research)} RP</span>` : ''}`;
+}
+
+function progressBar(prog, done = false) {
+  if (!prog && !done) return '';
+  const [cur, max] = done ? [1, 1] : prog;
+  const pct = Math.round((cur / Math.max(1, max)) * 100);
+  const label = done ? 'Complete' : `${fmt(cur)} / ${fmt(max)}`;
+  return `<div class="q-prog"><div class="bar thin ${done ? 'green' : ''}"><i style="width:${pct}%"></i></div><span>${label}</span></div>`;
+}
 import { audio } from '../core/audio.js';
 import { escapeHtml, fmt } from '../core/util.js';
 import { device, setControlPreference, describeDevice } from '../core/device.js';
@@ -240,27 +252,72 @@ export function showSettings(app) {
   elm.querySelector('[data-close2]').onclick = () => m.close();
 }
 
-export function showMissionLog(game) {
+export function showMissionLog(game, tab = 'story') {
   const mission = game.currentMission;
-  const done = MISSIONS.filter((m) => game.state.missionsDone.includes(m.id));
+  const doneIds = new Set(game.state.missionsDone);
+  const doneCount = MISSIONS.filter((m) => doneIds.has(m.id)).length;
+  const contracts = game.contracts;
+  const openC = contracts.filter((c) => !c.done)
+    .sort((a, b) => (b.prog ? b.prog[0] / b.prog[1] : 0) - (a.prog ? a.prog[0] / a.prog[1] : 0));
+  const doneC = contracts.filter((c) => c.done);
+
+  const story = `
+    <div class="q-summary">
+      <span>Story progress</span><b>${doneCount} / ${MISSIONS.length}</b>
+      <div class="bar thin"><i style="width:${Math.round((doneCount / MISSIONS.length) * 100)}%"></i></div>
+    </div>
+    ${mission ? `<div class="codex-entry quest-current">
+        <div class="tag">Current orders · ${doneCount + 1} of ${MISSIONS.length}</div>
+        <h4 style="color:var(--amber)">${escapeHtml(mission.title)}</h4>
+        <p>${escapeHtml(mission.desc)}</p>
+        <p class="q-hint">Hint: ${escapeHtml(mission.hint)}</p>
+        ${progressBar(game.progressOf(mission))}
+        <div class="reward-row">${rewardChips(mission.reward)}</div>
+      </div>` : `<div class="codex-entry" style="border-color:rgba(98,242,166,.4)"><h4>All missions complete</h4><p>The sector is safe, Captain. Keep exploring and take on Starfleet contracts.</p></div>`}
+    <ol class="quest-list">
+      ${MISSIONS.map((m, i) => {
+        const done = doneIds.has(m.id);
+        const cur = mission && m.id === mission.id;
+        const locked = !done && !cur;
+        return `<li class="q-item ${done ? 'done' : ''} ${cur ? 'cur' : ''} ${locked ? 'locked' : ''}">
+          <span class="q-num">${done ? '✓' : i + 1}</span>
+          <div class="q-meta"><b>${locked ? 'Classified orders' : escapeHtml(m.title)}</b>
+          <small>${locked ? 'Complete earlier missions to unseal.' : escapeHtml(m.desc)}</small></div>
+        </li>`;
+      }).join('')}
+    </ol>`;
+
+  const contractCard = (c) => `<div class="codex-entry contract ${c.done ? 'done' : ''}">
+      <div class="row between"><h4 style="margin:0">${escapeHtml(c.title)}</h4>${c.done ? '<span class="chip green">Paid</span>' : ''}</div>
+      <p style="margin-top:6px">${escapeHtml(c.desc)}</p>
+      ${progressBar(c.prog, c.done)}
+      <div class="reward-row">${rewardChips(c.reward)}</div>
+    </div>`;
+  const contractsHtml = `
+    <div class="q-summary">
+      <span>Contracts fulfilled</span><b>${doneC.length} / ${contracts.length}</b>
+      <div class="bar thin amber"><i style="width:${Math.round((doneC.length / contracts.length) * 100)}%"></i></div>
+    </div>
+    <p class="dim small" style="margin:0 0 10px">Optional orders from Starfleet. They run alongside the story and pay out the moment you hit the target.</p>
+    <div class="codex-grid">${openC.map(contractCard).join('')}${doneC.map(contractCard).join('')}</div>`;
+
   const m = modal({
     title: 'Mission Log', sub: 'Starfleet Command',
     body: `
-      ${mission ? `<div class="codex-entry" style="margin-bottom:12px;border-color:rgba(255,179,71,.4)">
-        <div class="tag">Current orders</div>
-        <h4 style="color:var(--amber)">${escapeHtml(mission.title)}</h4>
-        <p>${escapeHtml(mission.desc)}</p>
-        <p style="margin-top:8px;color:var(--ink-faint)">Hint: ${escapeHtml(mission.hint)}</p>
-        <div class="reward-row">
-          ${mission.reward.credits ? `<span class="chip amber">+${fmtC(mission.reward.credits)}</span>` : ''}
-          ${mission.reward.dilithium ? `<span class="chip cyan">+${mission.reward.dilithium} dilithium</span>` : ''}
-          ${mission.reward.research ? `<span class="chip violet">+${fmt(mission.reward.research)} RP</span>` : ''}
-        </div>
-      </div>` : `<div class="codex-entry" style="border-color:rgba(98,242,166,.4)"><h4>All missions complete</h4><p>The sector is safe, Captain. Keep exploring — the galaxy is procedurally endless.</p></div>`}
-      <div class="codex-grid">
-        ${done.map((d) => `<div class="codex-entry" style="opacity:.72"><div class="row between"><h4 style="margin:0">${escapeHtml(d.title)}</h4><span class="chip green">Complete</span></div><p style="margin-top:6px">${escapeHtml(d.desc)}</p></div>`).join('')}
-      </div>`,
+      <div class="tabs q-tabs" role="tablist">
+        <button class="tab ${tab === 'story' ? 'active' : ''}" data-qtab="story" role="tab">Story <span class="q-count">${doneCount}/${MISSIONS.length}</span></button>
+        <button class="tab ${tab === 'contracts' ? 'active' : ''}" data-qtab="contracts" role="tab">Contracts <span class="q-count">${doneC.length}/${contracts.length}</span></button>
+      </div>
+      <div data-qpane="story" ${tab === 'story' ? '' : 'hidden'}>${story}</div>
+      <div data-qpane="contracts" ${tab === 'contracts' ? '' : 'hidden'}>${contractsHtml}</div>`,
     footer: `<button class="btn ghost" data-close2>Close</button>`,
+  });
+  m.el.querySelectorAll('[data-qtab]').forEach((b) => {
+    b.onclick = () => {
+      audio.ui();
+      m.el.querySelectorAll('[data-qtab]').forEach((x) => x.classList.toggle('active', x === b));
+      m.el.querySelectorAll('[data-qpane]').forEach((p) => { p.hidden = p.dataset.qpane !== b.dataset.qtab; });
+    };
   });
   m.el.querySelector('[data-close2]').onclick = () => m.close();
 }

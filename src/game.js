@@ -1,7 +1,7 @@
 import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_ORDER, MAX_UPGRADE, computeStats, moduleCost, PALETTES } from './data/ships.js';
 import { DISTRICTS, DISTRICT_ORDER, TECHS, districtUpgradeCost } from './data/tech.js';
 import { buildGalaxy, planetById, surveyPlanet, warpCost, PLANET_TYPES } from './data/galaxy.js';
-import { MISSIONS, RANK_TITLES, rankFor, nextRankXp } from './data/missions.js';
+import { MISSIONS, CONTRACTS, RANK_TITLES, rankFor, nextRankXp } from './data/missions.js';
 import { storage, uid, clamp } from './core/util.js';
 
 const SAVE_KEY = 'startrek.ascension.save.v1';
@@ -57,7 +57,8 @@ export function newGameState(seed = 'alpha') {
     currentPlanetId: null,
     techs: [],
     missionsDone: [],
-    stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
+    contractsDone: [],
+    stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, met: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
     // autoFire is OFF: the weapons are the player's to pull. It stays a settings
     // toggle for anyone who wants the old hands-free behaviour.
     settings: { quality: 'auto', muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto', hudHidden: false },
@@ -109,6 +110,12 @@ export class Game {
     if (savedVersion < 4) this.state.settings.autoFire = false;
     // v5: planets can be landed on, which needs somewhere to remember it
     if (!this.state.landings || typeof this.state.landings !== 'object') this.state.landings = {};
+    if (!Array.isArray(this.state.contractsDone)) this.state.contractsDone = [];
+    if (!Array.isArray(this.state.missionsDone)) this.state.missionsDone = [];
+    // older saves never counted conversations: rebuild the tally from the landing records
+    if (!this.state.stats.met) {
+      this.state.stats.met = Object.values(this.state.landings).reduce((a, r) => a + (r?.met?.length || 0), 0);
+    }
     this.state.version = SAVE_VERSION;
     // guarantee a capital exists
     if (!this.state.civ.districts?.length) this.state.civ.districts = fresh.civ.districts;
@@ -139,6 +146,8 @@ export class Game {
       this.offlineReport = { away, credits: gainCredits, research: gainResearch };
     }
     this.loaded = true;
+    // anything finished under an older version of the mission list pays out now
+    this.checkMissions();
     this.bus.emit('change');
     return true;
   }
@@ -549,6 +558,7 @@ export class Game {
       if (reward.xp) this.addXp(reward.xp);
       this.save(true);
       this.bus.emit('change');
+      this.checkMissions();
     }
     return { ok: true, first: isNew };
   }
@@ -561,8 +571,10 @@ export class Game {
     const first = !rec.met.includes(personId);
     if (first) {
       rec.met.push(personId);
+      this.state.stats.met = (this.state.stats.met || 0) + 1;
       this.save();
       this.bus.emit('change');
+      this.checkMissions();
     }
     return { first };
   }
@@ -615,6 +627,7 @@ export class Game {
     this.state.research += bonus.research;
     this.save(true);
     this.bus.emit('change');
+    this.checkMissions();
     return bonus;
   }
 
@@ -648,22 +661,62 @@ export class Game {
     return MISSIONS.find((m) => !done.has(m.id)) || null;
   }
 
+  /** Progress toward a mission or contract as [current, target], or null. */
+  progressOf(m) {
+    if (!m?.progress) return null;
+    try {
+      const [cur, max] = m.progress(this.state, this);
+      return [Math.max(0, Math.min(cur, max)), max];
+    } catch (e) { return null; }
+  }
+
+  /** Optional side contracts, each with its status. */
+  get contracts() {
+    const done = new Set(this.state.contractsDone || []);
+    return CONTRACTS.map((c) => ({ ...c, done: done.has(c.id), prog: this.progressOf(c) }));
+  }
+
+  _payReward(r = {}) {
+    if (r.credits) this.state.credits += r.credits;
+    if (r.dilithium) this.state.dilithium += r.dilithium;
+    if (r.research) this.state.research += r.research;
+  }
+
   checkMissions() {
-    let guard = 0;
-    while (guard++ < 12) {
-      const m = this.currentMission;
-      if (!m) return;
-      let ok = false;
-      try { ok = m.check(this.state); } catch (e) { ok = false; }
-      if (!ok) return;
-      this.state.missionsDone.push(m.id);
-      const r = m.reward || {};
-      if (r.credits) this.state.credits += r.credits;
-      if (r.dilithium) this.state.dilithium += r.dilithium;
-      if (r.research) this.state.research += r.research;
-      this.save();
-      this.bus.emit('mission', { mission: m, reward: r });
-      this.bus.emit('change');
+    if (this._checking) return;
+    this._checking = true;
+    try {
+      // main story — strictly in order
+      let guard = 0;
+      while (guard++ < MISSIONS.length + 1) {
+        const m = this.currentMission;
+        if (!m) break;
+        let ok = false;
+        try { ok = m.check(this.state, this); } catch (e) { ok = false; }
+        if (!ok) break;
+        this.state.missionsDone.push(m.id);
+        this._payReward(m.reward);
+        this.logEntry(`Mission complete: ${m.title}`, 'good');
+        this.save();
+        this.bus.emit('mission', { mission: m, reward: m.reward || {} });
+        this.bus.emit('change');
+      }
+      // contracts — any order, all at once
+      if (!Array.isArray(this.state.contractsDone)) this.state.contractsDone = [];
+      for (const c of CONTRACTS) {
+        if (this.state.contractsDone.includes(c.id)) continue;
+        let ok = false;
+        try { ok = c.check(this.state, this); } catch (e) { ok = false; }
+        if (!ok) continue;
+        this.state.contractsDone.push(c.id);
+        this._payReward(c.reward);
+        this.logEntry(`Contract fulfilled: ${c.title}`, 'good');
+        this.save();
+        this.bus.emit('contract', { contract: c, reward: c.reward || {} });
+        this.bus.emit('change');
+      }
+    } finally {
+      this._checking = false;
     }
   }
 

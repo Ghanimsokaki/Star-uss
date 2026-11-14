@@ -309,6 +309,15 @@ class App {
       if (r.dilithium) bits.push(r.dilithium + ' D');
       if (bits.length) toast(`Orders complete · ${bits.join(' · ')}`, 'good', 4200);
     });
+    game.bus.on('contract', (d) => {
+      const r = d.reward || {};
+      const bits = [];
+      if (r.credits) bits.push('₡' + Math.round(r.credits).toLocaleString());
+      if (r.research) bits.push(r.research + ' RP');
+      if (r.dilithium) bits.push(r.dilithium + ' D');
+      toast(`Contract fulfilled: ${d.contract.title}${bits.length ? ' · ' + bits.join(' · ') : ''}`, 'good', 4600);
+      audio.upgrade?.();
+    });
     game.bus.on('change', () => {
       if (this._chromeShown) updateTopbar(game);
     });
