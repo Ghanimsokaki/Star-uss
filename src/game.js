@@ -157,6 +157,8 @@ export class Game {
   }
 
   save(force = false) {
+    // set while a different save is being swapped in, so unload can't clobber it
+    if (this.saveLocked) return;
     this.state.lastSave = Date.now();
     storage.set(SAVE_KEY, this.state);
     if (force) this.bus.emit('saved');

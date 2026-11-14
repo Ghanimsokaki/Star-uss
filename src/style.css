@@ -1077,3 +1077,13 @@ body[data-scene="system"] .fps-meter { bottom: auto; top: calc(112px + var(--saf
 .daily-day.today { border-color: var(--amber); background: rgba(255,179,71,.1); box-shadow: 0 0 18px rgba(255,179,71,.2); }
 .daily-day.today b { color: var(--amber); }
 @media (max-width: 520px) { .daily-grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* ---------- account + leaderboard ---------- */
+.acc-form { margin-top: 6px; }
+.acc-form input[type=password], .acc-form input[type=text] { width: 100%; padding: 9px 11px; border-radius: 9px; background: rgba(0,0,0,.35);
+  border: 1px solid rgba(89,224,255,.22); color: var(--ink); font-family: var(--font-b); font-size: 14px; }
+.acc-form input:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(89,224,255,.12); }
+table.lb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.lb th { text-align: left; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); padding: 6px 6px; border-bottom: 1px solid var(--line); }
+table.lb td { padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
+table.lb tr.me td { color: var(--amber); }

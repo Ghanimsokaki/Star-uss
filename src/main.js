@@ -12,7 +12,8 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
-import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily } from './ui/menus.js';
+import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount } from './ui/menus.js';
+import { cloudConfigured, initCloud, pushSave, pushScore, user as cloudUser } from './core/cloud.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
 import { playWarp } from './ui/warp.js';
@@ -248,6 +249,7 @@ class App {
     audio.ui();
     if (id === 'codex') { showCodex(game); return; }
     if (id === 'settings') { showSettings(this); return; }
+    if (id === 'account') { showAccount(this); return; }
     if (id === 'system') { this.setScene('system'); return; }
     if (id === 'planet') { this.setScene('planet', { planetId: game.state.currentPlanetId }); return; }
     if (id === this.currentName) return;
@@ -267,6 +269,17 @@ class App {
     document.querySelectorAll('.topbar').forEach((n) => n.remove());
     this._chromeShown = false;
     this._syncViewControls();
+  }
+
+  /** Replace the running game with a save from elsewhere (the cloud) and restart cleanly. */
+  loadSaveData(data) {
+    if (!data || typeof data !== 'object' || data.credits == null) { toast('That save could not be read', 'bad'); return; }
+    try {
+      game.saveLocked = true;
+      localStorage.setItem('startrek.ascension.save.v1', JSON.stringify(data));
+    } catch (e) { toast('Could not write the save', 'bad'); return; }
+    toast('Cloud save loaded — restarting the bridge…', 'good', 2000);
+    setTimeout(() => window.location.reload(), 900);
   }
 
   applyQuality(q) {
@@ -332,6 +345,16 @@ class App {
     setInterval(() => {
       if (this.currentName !== 'title') game.save();
     }, 20000);
+
+    // cloud: restore the session early, then mirror the save every two minutes
+    if (cloudConfigured()) {
+      initCloud();
+      setInterval(() => {
+        if (this.currentName === 'title' || !cloudUser()) return;
+        pushSave(game.state).then((r) => { if (!r.ok) console.warn('[cloud]', r.why); });
+        pushScore(game, cloudUser().user_metadata?.captain);
+      }, 120000);
+    }
 
     window.addEventListener('error', (e) => {
       console.error(e.error || e.message);

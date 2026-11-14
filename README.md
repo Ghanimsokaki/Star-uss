@@ -244,3 +244,22 @@ backend to connect.
 - Very large fleet battles on low-end phones will drop frames; quality auto-scales down.
 - Saves are per-browser (`localStorage`), not per-account.
 - Balance is tuned by simulation, not by a full playtest ladder.
+
+---
+
+## Accounts, cloud saves and the leaderboard (optional)
+
+Without configuration the game saves to the browser, exactly as before. To turn on accounts:
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. In the dashboard open **SQL → New query**, paste [`supabase/schema.sql`](supabase/schema.sql) and run it. It creates the
+   `saves` and `leaderboard` tables with row-level security (each player can only touch their own rows).
+3. Copy **Project URL** and the **anon public** key from **Project Settings → API**.
+4. Locally: copy `.env.example` to `.env.local` and fill both in. On Vercel: **Project → Settings → Environment
+   Variables**, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, then redeploy.
+5. Optional: under **Authentication → URL Configuration** set the Site URL to your deployed address so email links
+   come back to the game.
+
+Players then get an **Account** button in the top bar: sign up with email + password (or a one-time email link), sync
+progress across devices, load a newer cloud save, and appear on the leaderboard. The Supabase SDK is loaded only when
+accounts are configured.
