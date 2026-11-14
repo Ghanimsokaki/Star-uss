@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hullTextures, registryTexture, emblemTexture, glowTexture, hexToRgb } from './textures.js';
 import { SHIP_CLASSES, PALETTES } from '../data/ships.js';
 import { tryApplyModel } from './imported.js';
@@ -141,6 +142,75 @@ export function greeble(group, material, count, box, rng = Math.random) {
   }
 }
 
+/**
+ * Merge every static mesh of a hull into one mesh per material.
+ *
+ * A procedural ship is built from 100-200 small parts, and each part was its
+ * own draw call. Nothing animates the parts individually (the whole hull moves
+ * as one), so they can be baked: a typical hull drops to ~15 draw calls.
+ * Instanced meshes, sprites, points and anything flagged `userData.keep`
+ * are left alone.
+ *
+ * @returns {{before:number, after:number}} mesh counts, for tests
+ */
+function flipWinding(g) {
+  for (const attr of Object.values(g.attributes)) {
+    const a = attr.array, n = attr.itemSize;
+    for (let t = 0; t + 2 < attr.count; t += 3) {
+      for (let k = 0; k < n; k++) {
+        const i1 = (t + 1) * n + k, i2 = (t + 2) * n + k;
+        const tmp = a[i1]; a[i1] = a[i2]; a[i2] = tmp;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+}
+
+export function bakeStaticMeshes(group) {
+  group.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const buckets = new Map();
+  const victims = [];
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (Array.isArray(o.material) || o.userData.keep || o.renderOrder !== 0) return;
+    let p = o.parent, keep = false;
+    while (p && p !== group) { if (p.userData.keep) { keep = true; break; } p = p.parent; }
+    if (keep) return;
+    const key = o.material.uuid;
+    if (!buckets.has(key)) buckets.set(key, { material: o.material, geos: [] });
+    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.clearGroups();
+    g.morphAttributes = {};
+    const mtx = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    g.applyMatrix4(mtx);
+    // a mirrored part would come out inside-out once its transform is baked in
+    if (mtx.determinant() < 0) flipWinding(g);
+    buckets.get(key).geos.push(g);
+    victims.push(o);
+  });
+  const before = victims.length;
+  if (before < 2) return { before, after: before };
+  for (const v of victims) { v.parent.remove(v); v.geometry.dispose(); }
+  let after = 0;
+  for (const { material, geos } of buckets.values()) {
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    geos.forEach((g) => { if (g !== merged) g.dispose(); });
+    if (!merged) continue;
+    merged.computeBoundingSphere();
+    const m = new THREE.Mesh(merged, material);
+    m.name = 'baked';
+    group.add(m);
+    after++;
+  }
+  return { before, after };
+}
+
 export function disposeObject3D(root) {
   if (!root) return;
   // tell a pending model load not to attach to a dead object
@@ -227,14 +297,21 @@ export function makeShipMaterials(cls, record, quality = 1) {
     roughness: 0.22,
     toneMapped: false,
   });
-  const deflectorGlass = new THREE.MeshPhysicalMaterial({
+  // No `transmission` on any ship material: in three.js a single transmissive
+  // material makes the renderer draw the whole opaque scene a second time,
+  // every frame. Glossy + emissive reads the same at game distances.
+  const deflectorGlass = new THREE.MeshStandardMaterial({
     color: new THREE.Color(deflectorColor).lerp(new THREE.Color('#ffffff'), 0.4),
-    transmission: 0.55, roughness: 0.12, metalness: 0,
-    transparent: true, opacity: 0.65, envMapIntensity: 1.6,
+    emissive: new THREE.Color(deflectorColor), emissiveIntensity: 0.6,
+    roughness: 0.12, metalness: 0.1, envMapIntensity: 1.6,
   });
-  const glass = new THREE.MeshPhysicalMaterial({
-    color: 0x0a1420, metalness: 0.2, roughness: 0.08, transmission: 0.35,
-    transparent: true, opacity: 0.85, clearcoat: 1, clearcoatRoughness: 0.05,
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x0a1420, metalness: 0.6, roughness: 0.06, envMapIntensity: 1.8,
+  });
+  const bussard = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#ff6a3a'),
+    emissive: new THREE.Color('#e8361a'), emissiveIntensity: 1.35,
+    metalness: 0.2, roughness: 0.18, toneMapped: false,
   });
   const decal = new THREE.MeshBasicMaterial({
     map: registryTexture(record.name || cls.hullName, record.registry || cls.registry, '#1b232e'),
@@ -245,7 +322,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   });
   // lit portholes: warm cabin light, slightly over-bright so bloom picks it up
   const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(1.25), toneMapped: false });
-  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, decal, emblem, windows, palette, nacelleColor, deflectorColor };
+  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, bussard, decal, emblem, windows, palette, nacelleColor, deflectorColor };
 }
 
 /* ============================================================ builder */
@@ -427,11 +504,7 @@ class ShipBuilder {
     pivot.add(body);
 
     // bussard collector at front (+Z)
-    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.7, 24, 14), new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color('#ff6a3a'),
-      emissive: new THREE.Color('#e8361a'), emissiveIntensity: 1.25,
-      metalness: 0.2, roughness: 0.15, transmission: 0.35, transparent: true, opacity: 0.92, toneMapped: false,
-    }));
+    const bussard = new THREE.Mesh(new THREE.SphereGeometry(r * 0.7, 24, 14), this.mats.bussard);
     bussard.position.z = len * 0.45;
     bussard.scale.set(1, 1, 1.35);
     pivot.add(bussard);
@@ -546,8 +619,10 @@ class ShipBuilder {
   /** Navigation lights: red port, green starboard, white strobes plus window glow. */
   navLights(span, len, y) {
     if (!this.detail) return;
+    const bulbMats = this._bulbMats || (this._bulbMats = new Map());
     const mk = (color, pos, size = 0.075) => {
-      const bulb = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
+      if (!bulbMats.has(color)) bulbMats.set(color, new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), bulbMats.get(color));
       bulb.position.set(...pos);
       this.group.add(bulb);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -577,6 +652,7 @@ class ShipBuilder {
       const size = new THREE.Vector3(); bounds.getSize(size);
       this.navLights(size.x * 0.44, size.z, bounds.max.y - size.y * 0.28);
     }
+    bakeStaticMeshes(this.group);
     this.group.userData = {
       cls: this.cls,
       phaserMuzzles: this.phaserMuzzles,

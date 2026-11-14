@@ -4,6 +4,7 @@
  *
  *   · mouse: hold the RIGHT button and drag to swing the camera around the
  *     ship; the wheel zooms. A right-click without a drag still fires a torpedo.
+ *   · trackpad: two-finger swipe looks around, pinch zooms.
  *   · touch: drag on the RIGHT half of the screen to look around, pinch to
  *     zoom. The left half keeps steering, and a quick tap still locks a target.
  *   · the view stays where you leave it; double-click / double-tap (or B)
@@ -46,6 +47,22 @@ export function chaseOffset(shipPos, shipQuat, dist, height, look) {
   const pos = local.applyQuaternion(shipQuat).add(shipPos);
   const amount = Math.min(1, Math.abs(look.yaw) / 0.5 + Math.abs(look.pitch) / 0.5);
   return { pos, amount };
+}
+
+/**
+ * Tell a laptop trackpad from a mouse wheel.
+ *   · pinch arrives as a wheel event with ctrlKey set (Chrome, Edge, Firefox, Safari)
+ *   · a two-finger swipe has horizontal travel, or the fine-grained deltas a
+ *     notched wheel never produces (Chrome reports wheelDeltaY = -3 × deltaY)
+ * @returns {'pinch'|'swipe'|'wheel'}
+ */
+export function wheelKind(e) {
+  if (e.ctrlKey) return 'pinch';
+  if (e.deltaMode && e.deltaMode !== 0) return 'wheel';            // lines/pages: a real wheel
+  if (Math.abs(e.deltaX) > 0.5) return 'swipe';
+  if (e.wheelDeltaY && Math.abs(e.wheelDeltaY) === Math.abs(e.deltaY) * 3) return 'swipe';
+  if (!Number.isInteger(e.deltaY)) return 'swipe';
+  return Math.abs(e.deltaY) >= 50 ? 'wheel' : 'swipe';
 }
 
 export class OrbitChase {
@@ -163,7 +180,10 @@ export class OrbitChase {
     this._wheel = (e) => {
       if (!this.enabled()) return;
       e.preventDefault();
-      this.zoomBy(Math.exp(Math.sign(e.deltaY) * 0.1));
+      const kind = wheelKind(e);
+      if (kind === 'pinch') this.zoomBy(Math.exp(e.deltaY * 0.01));          // trackpad pinch
+      else if (kind === 'swipe') this.rotate(e.deltaX * 0.9, e.deltaY * 0.9);  // two-finger swipe
+      else this.zoomBy(Math.exp(Math.sign(e.deltaY) * 0.1));                  // mouse wheel notch
     };
     this._dbl = (e) => { if (this.enabled()) { e.preventDefault(); this.recenter(); } };
 

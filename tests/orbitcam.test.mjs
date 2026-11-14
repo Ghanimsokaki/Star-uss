@@ -55,3 +55,12 @@ test('the galaxy map has a warp bar outside the drawers', () => {
   assert.match(gal, /data-wb="warp"/);
   assert.match(gal, /data-wb="launch"/);
 });
+
+test('trackpad gestures are told apart from a mouse wheel', async () => {
+  const { wheelKind } = await import('../src/core/orbitcam.js');
+  assert.equal(wheelKind({ ctrlKey: true, deltaY: 3, deltaX: 0, deltaMode: 0 }), 'pinch');
+  assert.equal(wheelKind({ deltaY: 2, deltaX: 14, deltaMode: 0 }), 'swipe');
+  assert.equal(wheelKind({ deltaY: 4.5, deltaX: 0, deltaMode: 0 }), 'swipe');
+  assert.equal(wheelKind({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }), 'wheel');
+  assert.equal(wheelKind({ deltaY: 3, deltaX: 0, deltaMode: 1 }), 'wheel');
+});

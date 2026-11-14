@@ -45,6 +45,8 @@ class App {
     this._uiBeforeFreeCam = null;
 
     this.viewport.autoQuality();
+    this.viewport.governor.enabled = game.state.settings.autoPerf !== false;
+    this.setFpsMeter(!!game.state.settings.showFps);
     this._buildViewControls();
     this._bindGlobal();
     this._bindContextLoss();
@@ -332,11 +334,40 @@ class App {
     window.addEventListener('unhandledrejection', (e) => console.error(e.reason));
   }
 
+  /** Small corner read-out (Settings → Show FPS). */
+  setFpsMeter(on) {
+    if (on && !this.fpsEl) {
+      this.fpsEl = el('<div class="fps-meter" aria-hidden="true">— fps</div>');
+      document.body.appendChild(this.fpsEl);
+      this._fpsT = 0;
+    } else if (!on && this.fpsEl) {
+      this.fpsEl.remove();
+      this.fpsEl = null;
+    }
+  }
+
+  _tickFps(dt) {
+    this._fpsT = (this._fpsT || 0) + dt;
+    if (this._fpsT < 0.5) return;
+    this._fpsT = 0;
+    const v = this.viewport;
+    const fps = Math.round(v.fps);
+    this.fpsEl.textContent = `${fps} fps · ${Math.round(v.renderScale * 100)}% res${v.bloom.enabled ? '' : ' · no bloom'}`;
+    this.fpsEl.classList.toggle('bad', fps < 50);
+  }
+
   _startLoop() {
-    const clock = new THREE.Clock();
+    // THREE.Timer replaces the deprecated Clock (it also ignores time spent in
+    // a hidden tab when connected to the document)
+    const clock = new THREE.Timer();
+    clock.connect?.(document);
     const loop = () => {
       requestAnimationFrame(loop);
-      const dt = clamp(clock.getDelta(), 0, 0.1);
+      clock.update();
+      const raw = clock.getDelta();
+      this.viewport.frame(raw);
+      if (this.fpsEl) this._tickFps(raw);
+      const dt = clamp(raw, 0, 0.1);
       this.time += dt;
       try {
         game.tick(dt);

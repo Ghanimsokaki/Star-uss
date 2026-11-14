@@ -14,6 +14,7 @@ import { escapeHtml, clamp, damp } from '../core/util.js';
 import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
 import { OrbitChase, chaseOffset } from '../core/orbitcam.js';
+import { stepFlight, massFor, collideSphere, autopilotControls } from '../core/flight.js';
 import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -39,8 +40,12 @@ export class SystemScene {
     this.shieldHitTimer = 0;
     this.shake = 0;
     this.speed = 0;
+    this.vel = new THREE.Vector3();   // real velocity — see core/flight.js
+    this.autopilot = null;            // { kind, label } while engaged
     this.boosting = false;
-    this.throttle = 0.72;   // 0.25 .. 1, driven by z/c, the pad, or the touch rail
+    // cruise speed 0..1 (Z / C, the touch rail). Keyboard pilots fly on W, so
+    // cruise starts at zero there; touch has no W key and starts cruising.
+    this.throttle = isTouchScheme() ? 0.6 : 0;
     this.fireCd = 0;
     this.torpCd = 0;
     this.abilityCd = 0;
@@ -405,6 +410,8 @@ export class SystemScene {
       this._alignEngineSprites();
     });
     this.camDist = Math.max(18, (this.player.userData.length || 6) * 2.6);
+    this._mass = massFor(this.player.userData.length || 6);
+    this.vel?.set(0, 0, 0);
     this.camera.position.copy(this.player.position).add(V(0, 6, -this.camDist));
     this.camera.lookAt(this.player.position);
   }
@@ -504,27 +511,35 @@ export class SystemScene {
             <button class="act-btn warp" data-act="warp" id="warp-btn" title="Open the galaxy map and jump to another system (T)"><span class="ico">✧</span><span class="lbl">WARP</span><span class="kc">T</span></button>
             <button class="act-btn scan" data-action="scan" data-hold="0" id="scan-btn" title="Scan the nearest contact (R)"><span class="ico">⌖</span><span class="lbl">SCAN</span><span class="kc">R</span></button>
             <button class="act-btn ability" data-action="ability" data-hold="0" id="ability-btn" title="Ship special ability (E)"><span class="ico">✷</span><span class="lbl">ABILITY</span><span class="kc">E</span></button>
-            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost (hold Shift)"><span class="ico">»</span><span class="lbl">BOOST</span><span class="kc">⇧</span></button>
+            <button class="act-btn auto" id="auto-btn" title="Autopilot — fly to your target, the nearest anomaly or planet (P)"><span class="ico">⟴</span><span class="lbl">AUTO</span><span class="kc">P</span></button>
+            <button class="act-btn boost" data-action="boost" data-hold="1" title="Evasive boost (hold B)"><span class="ico">»</span><span class="lbl">BOOST</span><span class="kc">B</span></button>
             <button class="act-btn torp" data-action="torpedo" data-hold="1" title="Photon torpedo (F)"><span class="ico">◉</span><span class="lbl">TORP</span><span class="kc">F</span></button>
-            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold Space)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">SPC</span></button>
+            <button class="act-btn fire" data-action="fire" data-hold="1" title="Fire phasers (hold left mouse or K)"><span class="ico">✦</span><span class="lbl">FIRE</span><span class="kc">K</span></button>
           </div>
           <div class="control-strip" id="control-strip">
-            <span><b>WASD</b> / mouse — steer</span><span class="sep"></span>
-            <span><b>Space</b> fire</span><span class="sep"></span>
+            <span><b>W</b>/<b>S</b> thrust · <b>A</b>/<b>D</b> turn · <b>Space</b>/<b>Shift</b> up/down</span><span class="sep"></span>
+            <span><b>Click</b>/<b>K</b> fire</span><span class="sep"></span>
+            <span><b>P</b> autopilot</span><span class="sep"></span>
             <span><b>F</b> torpedo</span><span class="sep"></span>
             <span><b>E</b> ability</span><span class="sep"></span>
             <span><b>Q</b> target</span><span class="sep"></span>
             <span><b>T</b> warp</span><span class="sep"></span>
-            <span><b>Z</b>/<b>C</b> throttle</span><span class="sep"></span>
+            <span><b>Z</b>/<b>C</b> cruise · <b>B</b> boost</span><span class="sep"></span>
             <span><b>X</b> brake</span><span class="sep"></span>
             <span><b>L</b> land</span><span class="sep"></span>
-            <span><b>Right-drag</b> look · <b>wheel</b> zoom · <b>B</b> recenter</span><span class="sep"></span>
+            <span><b>Right-drag</b> look · <b>wheel</b> zoom · <b>N</b> recenter</span><span class="sep"></span>
             <span><b>O</b> free cam</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
           <div class="throttle-ui" id="throttle-ui">
             <div class="track"><i id="throttle-fill" style="height:72%"></i></div>
             <div class="lbl">IMP</div>
+          </div>
+          <div class="lift-pad" id="lift-pad">
+            <button class="thr-btn" data-action="up" data-hold="1" title="Climb (Space)"><span>⤒</span></button>
+            <button class="thr-btn fwd" data-action="thrust" data-hold="1" title="Forward thrust (W)"><span>W</span></button>
+            <button class="thr-btn" data-action="reverse" data-hold="1" title="Reverse (S)"><span>S</span></button>
+            <button class="thr-btn" data-action="down" data-hold="1" title="Descend (Shift)"><span>⤓</span></button>
           </div>
           <div class="throttle-pad" id="throttle-pad">
             <button class="thr-btn up" data-action="throttleUp" data-hold="1" title="More impulse power"><span>▲</span></button>
@@ -541,6 +556,7 @@ export class SystemScene {
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
     $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
+    $('#auto-btn', this.ui).onclick = () => this._toggleAutopilot();
     $('#warp-btn', this.ui).onclick = () => {
       audio.ui();
       this.addLog('Opening the galaxy map — pick a star and engage warp.', 'good');
@@ -556,7 +572,7 @@ export class SystemScene {
     this._logEl = $('#syslog', this.ui);
     this.logLines = [];
     this.addLog(`Entering ${sys.name} — ${STAR_LABEL[sys.star] || 'stellar body'}`, 'good');
-    this.addLog('Phasers: Space / FIRE · Torpedoes: F / TORP · Scan: E / SCAN', '');
+    this.addLog(isTouchScheme() ? 'Drag left side to steer · W/S pads for thrust · AUTO flies for you' : 'W/S thrust · A/D turn · Space/Shift up/down · click or K fires · P autopilot', '');
     this._updateHud(true);
   }
 
@@ -650,8 +666,18 @@ export class SystemScene {
         }
       }
     }
-    const steerX = clamp(input.steer.x + assistX * (1 - Math.min(1, Math.abs(input.steer.x))), -1, 1);
-    const steerY = clamp(input.steer.y + assistY * (1 - Math.min(1, Math.abs(input.steer.y))), -1, 1);
+    // --- autopilot: P / the AUTO button. Any manual stick, key or thrust takes over.
+    if (input.consume('autopilot')) this._toggleAutopilot();
+    const manual = Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25 || input.thrust !== 0 || input.lift !== 0;
+    let ap = null;
+    if (this.autopilot) {
+      if (manual) this._toggleAutopilot(false, 'Manual control');
+      else ap = this._autopilotStep();
+    }
+    const inSteerX = ap ? ap.steer.x : input.steer.x;
+    const inSteerY = ap ? ap.steer.y : input.steer.y;
+    const steerX = clamp(inSteerX + assistX * (1 - Math.min(1, Math.abs(inSteerX))), -1, 1);
+    const steerY = clamp(inSteerY + assistY * (1 - Math.min(1, Math.abs(inSteerY))), -1, 1);
 
     // steer.x = +1 is starboard; core/helm.js owns the yaw sign (and normalises)
     applyHelm(this.player.quaternion, { x: steerX, y: steerY }, {
@@ -662,14 +688,18 @@ export class SystemScene {
 
     // --- impulse throttle: hold Z / the ▲ pad, or C / ▼. X is all-stop.
     if (input.throttleRate) {
-      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0.25, 1);
+      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0, 1);
     }
+    let braking = false;
     if (input.consume('brake')) {
-      this.throttle = 0.3;
+      this.throttle = 0;
+      this._allStop = 0.8;
+      this._toggleAutopilot(false);
       this._abilityRing('#9fd8ff', 8);
-      toast('All stop — impulse power reduced', 'warn', 1400);
+      toast('All stop', 'warn', 1200);
       audio.ui();
     }
+    if (this._allStop > 0) { this._allStop -= dt; braking = true; }
 
     const boosting = input.actions.boost && this.boost > 0.02;
     this.boosting = boosting;
@@ -677,10 +707,19 @@ export class SystemScene {
     else this.boost = Math.min(1, this.boost + dt * 0.16);
     const baseSpeed = stats.speed;
     const sprint = this.speedBoostTimer > 0 ? 1.45 : 1;
-    this.speed = damp(this.speed, baseSpeed * this.throttle * sprint * (boosting ? 2.0 : 1), 2.2, dt);
+    // --- physics: engines push a real velocity; momentum carries through turns
+    stepFlight(this.vel, this.player.quaternion, {
+      thrust: ap ? ap.thrust : input.thrust,
+      lift: ap ? 0 : input.lift,
+      cruise: ap ? 0 : this.throttle,
+      boost: boosting,
+      brake: braking,
+    }, { maxSpeed: baseSpeed * sprint, mass: this._mass || 1 }, dt);
+    this.player.position.addScaledVector(this.vel, dt);
+    this.speed = this.vel.length();
+    this._collide(dt);
 
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
-    this.player.position.addScaledVector(forward, this.speed * dt);
 
     // stellar corona — fly too close to the star and the hull cooks
     if (this.star && !this.dead) {
@@ -1522,6 +1561,87 @@ export class SystemScene {
   }
 
   /** Drop out of the sky next to the world we just lifted off from. */
+  /* ------------------------------------------------------------ physics */
+  /** Planets and hostile hulls are solid: bounce off, and hit hard = damage. */
+  _collide() {
+    const pos = this.player.position;
+    const shipR = Math.max(1.5, (this.player.userData.length || 6) * 0.35);
+    for (const p of this.planetNodes || []) {
+      const c = p.node.getWorldPosition(V());
+      const hit = collideSphere(pos, this.vel, c, p.radius * 1.02, shipR, 0.3);
+      if (hit > 6) this._impact(hit, `Impact with ${p.data.name}`);
+    }
+    for (const e of this.enemies || []) {
+      if (e.dead) continue;
+      const hit = collideSphere(pos, this.vel, e.group.position, (e.radius || 3) * 0.8, shipR, 0.5);
+      if (hit > 4) {
+        this._impact(hit * 0.6, 'Collision!');
+        if (typeof e.hp === 'number') e.hp -= hit * 0.8;
+      }
+    }
+  }
+
+  _impact(speed, msg) {
+    if (this.time - (this._lastImpact || 0) < 0.35) return;
+    this._lastImpact = this.time;
+    this._damagePlayer(Math.min(60, speed * 0.55));
+    this.shake = Math.max(this.shake, Math.min(1.4, speed / 40));
+    if (msg) this.addLog(msg, 'hostile');
+  }
+
+  /* ------------------------------------------------------------ autopilot */
+  /** Pick where the autopilot should go: target → open anomaly → nearest planet. */
+  _autopilotDest() {
+    if (this.target && !this.target.dead) {
+      return { pos: this.target.group.position.clone(), standoff: 70, label: this.target.def?.name || 'target', kind: 'target' };
+    }
+    const here = this.player.position;
+    let best = null;
+    for (const a of this.anomalyNodes || []) {
+      if (a.scanned) continue;
+      const p = (a.node || a.group).getWorldPosition(V());
+      const d = p.distanceTo(here);
+      if (!best || d < best.d) best = { d, pos: p, standoff: 24, label: a.data.name, kind: 'anomaly' };
+    }
+    if (best) return best;
+    for (const p of this.planetNodes || []) {
+      const c = p.node.getWorldPosition(V());
+      const d = c.distanceTo(here);
+      if (!best || d < best.d) best = { d, pos: c, standoff: p.radius * 1.9 + 20, label: p.data.name, kind: 'planet', live: p };
+    }
+    return best;
+  }
+
+  _toggleAutopilot(on = !this.autopilot, why = '') {
+    const btn = this.ui && $('#auto-btn', this.ui);
+    if (!on) {
+      if (this.autopilot) toast(why ? `Autopilot off — ${why}` : 'Autopilot off', 'warn', 1400);
+      this.autopilot = null;
+      btn?.classList.remove('on');
+      return;
+    }
+    const d = this._autopilotDest();
+    if (!d) { toast('Autopilot: nothing to fly to', 'warn', 1600); return; }
+    this.autopilot = { kind: d.kind, label: d.label };
+    btn?.classList.add('on');
+    this.addLog(`Autopilot engaged — course laid in for ${d.label}`, 'good');
+    toast(`Autopilot → ${d.label}`, 'good', 1800);
+    audio.ui();
+  }
+
+  _autopilotStep() {
+    const d = this._autopilotDest();
+    if (!d) { this._toggleAutopilot(false, 'no destination'); return null; }
+    if (d.label !== this.autopilot.label) this.autopilot = { kind: d.kind, label: d.label };
+    const out = autopilotControls(this.player.position, this.player.quaternion, this.vel, d.pos, d.standoff, this.stats.speed);
+    if (out.arrived && d.kind !== 'target') {
+      this._toggleAutopilot(false, `arrived at ${d.label}`);
+      if (d.kind === 'planet') this.addLog('In orbit. Press L to land.', 'good');
+      if (d.kind === 'anomaly') this.addLog('On station. Press R to scan.', 'good');
+    }
+    return out;
+  }
+
   _spawnNear(planetId) {
     const entry = this.planetNodes?.find((n) => n.data.id === planetId);
     if (!entry || !this.player) return;
@@ -1531,8 +1651,9 @@ export class SystemScene {
     at.y += entry.radius * 0.3;
     this.player.position.copy(at);
     this.player.lookAt(centre.x, centre.y, centre.z); // nose +Z, so we face the planet
-    this.speed = 48;      // gentle, the damped throttle takes over next frame
-    this.throttle = 0.4;
+    this.speed = 0;
+    this.vel.set(0, 0, 0);
+    this.throttle = isTouchScheme() ? 0.4 : 0;
   }
 
   /** The nearest planet with a surface, within landing range. */
@@ -1761,7 +1882,7 @@ export class SystemScene {
         if (angle > 0.72) {
           e.fireCd = Math.max(0.5, 1.6 / (e.def.fireRate || 1)) * (0.7 + Math.random() * 0.6);
           const muzzle = pos.clone().addScaledVector(forward, e.radius * 0.8);
-          const lead = playerPos.clone().addScaledVector(V(0, 0, 1).applyQuaternion(this.player.quaternion).multiplyScalar(this.speed * 0.4));
+          const lead = playerPos.clone().addScaledVector(this.vel, 0.4);
           const shotDir = lead.sub(muzzle).normalize();
           this._spawnEnemyBolt(muzzle, shotDir, e.def.dmg, e.def.colors.glow);
           audio.phaser(-0.3);

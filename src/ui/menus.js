@@ -102,7 +102,7 @@ export function showHowTo() {
       <div class="grid2" style="gap:10px">
         <div class="codex-entry" style="${touch ? 'opacity:.55' : ''}">
           <h4>Flight — Mouse &amp; keyboard</h4>
-          <p><b>Mouse</b> or <b>W A S D</b> / arrows steer · <b>Space</b> / left click phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>Shift</b> boost · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> throttle · <b>X</b> all stop · <b>V</b> weapons assist · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
+          <p><b>W</b> forward · <b>S</b> back · <b>A</b>/<b>D</b> turn · <b>Space</b> up · <b>Shift</b> down · <b>mouse</b>/arrows aim · <b>left click</b>/<b>K</b> phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>B</b> boost · <b>P</b> autopilot · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> cruise speed · <b>X</b> all stop · <b>V</b> weapons assist · <b>right-drag</b> or two-finger swipe looks around · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
         </div>
         <div class="codex-entry" style="${touch ? '' : 'opacity:.55'}">
           <h4>Flight — Touch</h4>
@@ -144,6 +144,20 @@ export function showSettings(app) {
         <div><div class="nm">Graphics</div><div class="ds">Resolution, bloom and model detail</div></div>
         <div class="seg" data-seg="quality">
           ${['auto', 'low', 'medium', 'high'].map((q) => `<button data-q="${q}" class="${quality === q ? 'on' : ''}">${q}</button>`).join('')}
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Hold 60 FPS</div><div class="ds">Automatically lowers resolution, then anti-aliasing and bloom, whenever the frame rate dips — and raises them again when there is headroom</div></div>
+        <div class="seg" data-seg="perf">
+          <button data-p="on" class="${g.state.settings.autoPerf !== false ? 'on' : ''}">On</button>
+          <button data-p="off" class="${g.state.settings.autoPerf === false ? 'on' : ''}">Off</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Show FPS</div><div class="ds">Frame rate and render resolution in the corner</div></div>
+        <div class="seg" data-seg="fps">
+          <button data-fps="on" class="${g.state.settings.showFps ? 'on' : ''}">On</button>
+          <button data-fps="off" class="${!g.state.settings.showFps ? 'on' : ''}">Off</button>
         </div>
       </div>
       <div class="setting-row">
@@ -200,6 +214,22 @@ export function showSettings(app) {
     g.state.settings.quality = q;
     app.applyQuality(q);
     g.save();
+  }));
+  elm.querySelectorAll('[data-seg="perf"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="perf"] button').forEach((x) => x.classList.toggle('on', x === b));
+    const on = b.dataset.p === 'on';
+    g.state.settings.autoPerf = on;
+    app.viewport.governor.enabled = on;
+    if (!on) app.viewport.governor.reset();
+    g.save();
+    audio.ui();
+  }));
+  elm.querySelectorAll('[data-seg="fps"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="fps"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.showFps = b.dataset.fps === 'on';
+    app.setFpsMeter(g.state.settings.showFps);
+    g.save();
+    audio.ui();
   }));
   elm.querySelectorAll('[data-seg="assist"] button').forEach((b) => b.addEventListener('click', () => {
     elm.querySelectorAll('[data-seg="assist"] button').forEach((x) => x.classList.toggle('on', x === b));

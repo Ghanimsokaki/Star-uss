@@ -968,3 +968,74 @@ body:has(.big-overlay) .view-controls { display: none; }
   .warp-bar .wb-actions { justify-content: stretch; }
   .warp-bar .wb-actions .btn { flex: 1; }
 }
+
+/* ---------- FPS meter ---------- */
+.fps-meter { position: fixed; z-index: 55; right: calc(10px + var(--safe-r)); bottom: calc(6px + var(--safe-b));
+  font: 600 10px/1 var(--font-h); letter-spacing: .08em; color: var(--green); pointer-events: none;
+  background: rgba(4,8,14,.7); border: 1px solid rgba(98,242,166,.3); border-radius: 6px; padding: 4px 7px; }
+.fps-meter.bad { color: var(--amber); border-color: rgba(255,179,71,.4); }
+body[data-scene="system"] .fps-meter { bottom: auto; top: calc(112px + var(--safe-t)); }
+
+/* ---------- touch thrust pad (W / S / up / down) ----------
+   Left edge, above the steering thumb; the cruise rail stays on the right. */
+.lift-pad { position: absolute; left: calc(14px + var(--safe-l)); top: 50%; transform: translateY(-50%);
+  display: none; flex-direction: column; gap: 8px; pointer-events: auto; z-index: 6; }
+.touch-mode .lift-pad { display: flex; }
+.lift-pad .thr-btn.fwd { border-color: rgba(98,242,166,.45); color: var(--green); font-family: var(--font-h); }
+.is-mobile.portrait .lift-pad { gap: 6px; }
+.act-btn.auto.on { background: rgba(98,242,166,.22); border-color: var(--green); color: var(--green);
+  box-shadow: 0 0 18px rgba(98,242,166,.35); }
+
+/* ============================================================ phone flight layout
+   Phones get a lean HUD: one compact vitals card, the thrust pad in the free
+   space on the left, and the action buttons in a tidy block that never runs
+   off-screen. The full log and orders live one tap away (M). */
+.is-mobile .hud-top .vitals:nth-child(n+2) { display: none; }
+.is-mobile .syslog { display: none; }
+.is-mobile .control-strip { display: none; }
+
+/* thrust pad: a 2×2 block (up / W / S / down) above the steering stick */
+.is-mobile .lift-pad {
+  top: auto; transform: none; display: none;
+  grid-template-columns: repeat(2, 44px); gap: 7px;
+  left: calc(12px + var(--safe-l)); bottom: calc(150px + var(--safe-b));
+}
+.is-mobile.touch-mode .lift-pad { display: grid; }
+.is-mobile .lift-pad .thr-btn { width: 44px; height: 44px; }
+.is-mobile:not(.portrait) .lift-pad { bottom: calc(14px + var(--safe-b)); left: calc(156px + var(--safe-l)); }
+
+/* action buttons: wrap into rows, anchored bottom-right */
+.is-mobile.portrait .hud-actions {
+  display: grid; grid-template-columns: repeat(5, 54px); gap: 7px; justify-items: center; align-items: end;
+  width: auto; left: auto;
+}
+.is-mobile.portrait .hud-actions .act-btn { width: 54px; height: 54px; }
+.is-mobile.portrait .hud-actions .act-btn.fire { grid-column: 5; grid-row: 1 / span 2; align-self: center; width: 60px; height: 60px; }
+.is-mobile.portrait .view-controls { top: calc(136px + var(--safe-t)); left: auto; right: calc(10px + var(--safe-r)); transform: none; flex-direction: column; align-items: flex-end; }
+.is-mobile.portrait .throttle-pad { top: 54%; }
+/* portrait: the left half of the screen is already the steering surface, so the
+   joystick graphic would only collide with the button block */
+.is-mobile.portrait .stick-zone { display: none !important; }
+.is-mobile.portrait .lift-pad { bottom: calc(160px + var(--safe-b)); }
+
+/* top bar: phones show credits + dilithium, research moves to the Earth screen */
+@media (max-width: 480px) {
+  .tb-brand, .tb-sep, .stat .k { display: none; }
+  .stat.res { display: none; }
+  .tb-stats { gap: 2px; min-width: 0; }
+  .stat .v { font-size: 11px; white-space: nowrap; }
+}
+.is-mobile.portrait .touch-hint { bottom: auto; top: calc(210px + var(--safe-t)); }
+
+/* ---------- Earth: advanced globe tools ---------- */
+.earth-ui .globe-tools { flex-wrap: wrap; justify-content: flex-end; max-width: min(92vw, 420px); }
+.globe-layers { position: absolute; z-index: 8; right: calc(14px + var(--safe-r)); bottom: calc(70px + var(--safe-b));
+  width: 250px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.globe-layers .gl-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+  font-family: var(--font-h); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+.globe-layers .gl-row { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-dim); cursor: pointer; padding: 3px 0; }
+.globe-layers .gl-row input { accent-color: var(--cyan); width: 16px; height: 16px; }
+.globe-layers .gl-sun { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--ink-dim); }
+.globe-layers .gl-sun b { font-family: var(--font-h); color: var(--amber); }
+.globe-layers .gl-stats { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-faint); letter-spacing: .06em; margin-top: 4px; }
+.icon-btn.active { color: var(--bg); background: var(--cyan); border-color: var(--cyan); }
