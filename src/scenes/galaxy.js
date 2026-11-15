@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { initDrawers } from '../ui/drawers.js';
+import { bindKeys, orbitBy, zoomBy } from '../ui/keys.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
 import { glowTexture } from '../art/textures.js';
@@ -162,6 +163,24 @@ export class GalaxyScene {
     this._refresh();
     this._bindings = [this.game.bus.on('change', () => { this._refresh(); })];
     this._bindPick();
+    const step = (dir) => {
+      const list = this._sortedSystems();
+      const i = Math.max(0, list.findIndex((x) => x.id === this.selectedId));
+      const next = list[(i + dir + list.length) % list.length];
+      audio.ui();
+      this._selectSystem(next.id);
+    };
+    this._unkeys = bindKeys({
+      arrowright: () => step(1), d: () => step(1),
+      arrowleft: () => step(-1), a: () => step(-1),
+      arrowup: () => zoomBy(this.controls, this.camera, 0.85), w: () => zoomBy(this.controls, this.camera, 0.85),
+      arrowdown: () => zoomBy(this.controls, this.camera, 1.18), s: () => zoomBy(this.controls, this.camera, 1.18),
+      q: () => orbitBy(this.controls, this.camera, 0.18), e: () => orbitBy(this.controls, this.camera, -0.18),
+      c: () => { audio.ui(); this._selectSystem(this.game.state.currentSystemId); },
+      l: () => { if (this.selectedId === this.game.state.currentSystemId) { audio.confirm(); this.app.setScene('system'); } else return false; },
+      enter: () => { if (this.selectedId === this.game.state.currentSystemId) { audio.confirm(); this.app.setScene('system'); } else return false; },
+      '[': () => this.drawers?.toggle('left'), ']': () => this.drawers?.toggle('right'),
+    });
     audio.startMusic();
   }
 
@@ -198,6 +217,8 @@ export class GalaxyScene {
   }
 
   exit() {
+    this._unkeys?.();
+    this._unkeys = null;
     this._unpick?.();
     this._unpick = null;
     if (this._enterKey) window.removeEventListener('keydown', this._enterKey);

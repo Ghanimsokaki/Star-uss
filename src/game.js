@@ -4,6 +4,7 @@ import { buildGalaxy, planetById, surveyPlanet, warpCost, PLANET_TYPES } from '.
 import { MISSIONS, CONTRACTS, RANK_TITLES, RANK_XP, rankFor, nextRankXp } from './data/missions.js';
 import { storage, uid, clamp } from './core/util.js';
 import { CUSTOM_ID, registerCustomClass, sanitizeDesign, costForDesign } from './data/designer.js';
+import { normalizeDamage, freshDamage, effects as damageEffects, anyDamage } from './core/damage.js';
 
 const SAVE_KEY = 'startrek.ascension.save.v1';
 const SAVE_VERSION = 5;
@@ -112,6 +113,7 @@ export class Game {
     // v5: planets can be landed on, which needs somewhere to remember it
     if (!this.state.landings || typeof this.state.landings !== 'object') this.state.landings = {};
     if (!Array.isArray(this.state.contractsDone)) this.state.contractsDone = [];
+    this.state.shipDamage = normalizeDamage(this.state.shipDamage);
     if (!Array.isArray(this.state.missionsDone)) this.state.missionsDone = [];
     // older saves never counted conversations: rebuild the tally from the landing records
     if (!this.state.stats.met) {
@@ -173,6 +175,21 @@ export class Game {
     this.state = newGameState();
     this.galaxy = buildGalaxy(this.state.seed);
     this.bus.emit('change');
+  }
+
+  /* ------------------------------------------------------------ ship damage */
+  /** Live integrity map for the ship in command (see core/damage.js). */
+  get damage() {
+    if (!this.state.shipDamage) this.state.shipDamage = freshDamage();
+    return this.state.shipDamage;
+  }
+
+  /** Drydock: every system back to full. Returns true if anything was broken. */
+  repairAll() {
+    const was = anyDamage(this.state.shipDamage);
+    this.state.shipDamage = freshDamage();
+    if (was) { this.save(); this.bus.emit('change'); }
+    return was;
   }
 
   /* ------------------------------------------------------------ ship designer */
@@ -447,6 +464,7 @@ export class Game {
   canWarpTo(systemId) {
     const sys = this.galaxy.byId[systemId];
     if (!sys) return { ok: false, why: 'No such system' };
+    if (!damageEffects(this.damage).warp) return { ok: false, why: 'Warp core offline — repair it in Main Engineering (I to go below decks)' };
     if (sys.id === this.state.currentSystemId) return { ok: false, why: 'Already in this system' };
     if (sys.boss && !this.hasTech('singularity')) return { ok: false, why: 'Requires Singularity Physics research' };
     const cost = this.warpCostTo(systemId);

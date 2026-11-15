@@ -20,7 +20,7 @@ export class Input {
     this.actions = {
       fire: false, torpedo: false, boost: false, brake: false,
       throttleUp: false, throttleDown: false,
-      thrust: false, reverse: false, up: false, down: false,
+      thrust: false, reverse: false, up: false, down: false, repair: false,
     };
     this.thrust = 0;   // -1 reverse .. +1 forward (W / S)
     this.lift = 0;     // -1 down .. +1 up (Shift / Space)
@@ -86,6 +86,8 @@ export class Input {
       if (k === 'n') this._press('recenter');
       if (k === 'p') this._press('autopilot');
       if (k === 'l') this._press('land');
+      if (k === 'i') this._press('interior');
+      if (k === 'escape') this._press('back');
       if (k === 'h') this._press('help');
     });
     window.addEventListener('keyup', (e) => {
@@ -197,7 +199,7 @@ export class Input {
   /* ------------------------------------------------------------- actions */
   _press(name) {
     this.pressed.add(name);
-    if (['fire', 'torpedo', 'boost', 'thrust', 'reverse', 'up', 'down'].includes(name)) this.actions[name] = true;
+    if (['fire', 'torpedo', 'boost', 'thrust', 'reverse', 'up', 'down', 'repair'].includes(name)) this.actions[name] = true;
     if (name === 'throttleUp' || name === 'throttleDown') this.actions[name] = true;
     this.haptic(name === 'fire' ? 0 : 8);
   }

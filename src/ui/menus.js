@@ -533,3 +533,19 @@ export async function showLeaderboard() {
   });
   m.el.querySelector('[data-close2]').onclick = () => m.close();
 }
+
+/** Every control for the screen you are on (? or F1). */
+export async function showControls(app) {
+  const { CONTROLS } = await import('./keys.js');
+  const scene = app.current?.interior?.active ? 'interior' : app.currentName;
+  const title = { system: 'Flight', interior: 'Below decks', galaxy: 'Galaxy map', earth: 'Earth', hangar: 'Shipyard', planet: 'Planet surface' }[scene] || 'Controls';
+  const table = (rows) => `<table class="keys-table">${rows.map(([k, d]) => `<tr><td><kbd>${escapeHtml(k)}</kbd></td><td>${escapeHtml(d)}</td></tr>`).join('')}</table>`;
+  const m = modal({
+    title: `${title} controls`, sub: 'Keyboard · mouse · trackpad · touch',
+    body: `${CONTROLS[scene] ? table(CONTROLS[scene]) : ''}
+      <div class="tag" style="margin:14px 0 6px">Everywhere</div>${table(CONTROLS.everywhere)}
+      <p class="tiny faint" style="margin-top:12px">Everything here also works with a mouse or a touch screen — and every button can be reached with Tab and pressed with Enter.</p>`,
+    footer: '<button class="btn ghost" data-close2>Close</button>',
+  });
+  m.el.querySelector('[data-close2]').onclick = () => m.close();
+}

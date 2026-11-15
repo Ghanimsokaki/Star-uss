@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { initDrawers } from '../ui/drawers.js';
+import { bindKeys } from '../ui/keys.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildShip, disposeObject3D } from '../art/ships3d.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
@@ -120,10 +121,15 @@ export class HangarScene {
     this._buildShip();
     this._buildUI();
     this._bindings = [this.game.bus.on('change', () => { this._refreshFleet(); this._refreshTab(); })];
+    // drydock: docking at Utopia Planitia patches every damaged system
+    this._bindHangarKeys();
+    if (this.game.repairAll()) setTimeout(() => toast('Drydock crews repaired every damaged system', 'good', 2800), 400);
     audio.startMusic();
   }
 
   exit() {
+    this._unkeys?.();
+    this._unkeys = null;
     this._closeDesigner(false);
     this._bindings?.forEach((off) => off());
     this._bindings = [];
@@ -253,6 +259,35 @@ export class HangarScene {
       });
     });
     this._refreshLabels();
+  }
+
+  _bindHangarKeys() {
+    const ids = () => (this.game.state.customDesign ? [CUSTOM_ID, ...SHIP_ORDER] : SHIP_ORDER);
+    const step = (dir) => {
+      if (this._designer) return false;
+      const list = ids();
+      const i = Math.max(0, list.indexOf(this.previewId));
+      this.previewId = list[(i + dir + list.length) % list.length];
+      audio.ui();
+      this._buildShip(); this._refreshFleet(); this._refreshTab();
+      $(`[data-ship="${this.previewId}"]`, this.ui)?.scrollIntoView({ block: 'nearest' });
+    };
+    const turn = (a) => { if (this.shipPivot) this.shipPivot.rotation.y += a; };
+    const tab = (name) => $(`#hangar-tabs [data-tab="${name}"]`, this.ui)?.click();
+    this._unkeys = bindKeys({
+      arrowdown: () => step(1), arrowup: () => step(-1),
+      arrowleft: () => turn(0.2), a: () => turn(0.2), arrowright: () => turn(-0.2), d: () => turn(-0.2),
+      enter: () => {
+        if (this._designer) return false;
+        const b = $('#hangar-foot .btn.primary:not([disabled])', this.ui);
+        if (!b) return false;
+        b.click();
+      },
+      n: () => (this._designer ? false : this._openDesigner()),
+      escape: () => (this._designer ? this._closeDesigner(true) : false),
+      1: () => tab('stats'), 2: () => tab('upgrades'), 3: () => tab('customize'), 4: () => tab('research'),
+      '[': () => this.drawers?.toggle('left'), ']': () => this.drawers?.toggle('right'),
+    });
   }
 
   /* ---------------------------------------------------------------- designer */

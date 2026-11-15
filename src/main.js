@@ -12,7 +12,7 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
-import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount } from './ui/menus.js';
+import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount, showControls } from './ui/menus.js';
 import { cloudConfigured, initCloud, pushSave, pushScore, user as cloudUser } from './core/cloud.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
@@ -302,6 +302,11 @@ class App {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
       if (e.key === 'Escape') {
         if (hasModal()) closeModals();
+      }
+      if ((e.key === '?' || e.key === 'F1') && this.currentName !== 'title') {
+        e.preventDefault();
+        if (!hasModal()) showControls(this);
+        return;
       }
       if (e.key.toLowerCase() === 'm' && this.currentName !== 'title') showMissionLog(game);
       if (e.key.toLowerCase() === 'j' && this.currentName !== 'title') this.navigate('earth');

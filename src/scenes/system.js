@@ -15,6 +15,9 @@ import { applyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
 import { OrbitChase, chaseOffset } from '../core/orbitcam.js';
 import { stepFlight, massFor, collideSphere, autopilotControls } from '../core/flight.js';
+import { SYSTEMS, SYSTEM_IDS, applyHit, repairTick, effects as damageEffects, BROKEN } from '../core/damage.js';
+import { ShipInterior, LAYOUT } from './interior.js';
+import { bindKeys } from '../ui/keys.js';
 import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -142,6 +145,12 @@ export class SystemScene {
     this.freecam = null;
     this.orbit?.dispose();
     this.orbit = null;
+    this._unkeys?.();
+    this._unkeys = null;
+    if (this.interior?.active) { this.interior.exit(); this.ui?.classList.remove('below-decks'); }
+    document.body.classList.remove('below-decks');
+    this.interior?.dispose();
+    this.interior = null;
     this.loot?.forEach((L) => this.fxRoot.remove(L.g));
     this.loot = [];
     this.combo = null;
@@ -392,7 +401,15 @@ export class SystemScene {
     this.orbit = new OrbitChase(this.app.canvas, {
       input: this.app.input,
       isTouch: () => isTouchScheme(),
-      enabled: () => !this.freecam?.active && !this.dead,
+      enabled: () => !this.freecam?.active && !this.dead && !this.interior?.active,
+    });
+    // keyboard camera: [ ] swing around the ship, - = zoom (N recenters)
+    this._unkeys?.();
+    this._unkeys = bindKeys({
+      '[': () => (this.interior?.active ? false : this.orbit?.rotate(-60, 0)),
+      ']': () => (this.interior?.active ? false : this.orbit?.rotate(60, 0)),
+      '-': () => (this.interior?.active ? false : this.orbit?.zoomBy(1.15)),
+      '=': () => (this.interior?.active ? false : this.orbit?.zoomBy(0.87)),
     });
     // free camera: O toggles a detached orbit rig so the hull can be inspected
     this.freecam?.dispose();
@@ -422,7 +439,84 @@ export class SystemScene {
 
   /** Flip between the chase rig and the detached orbit camera (button + O key). */
   toggleFreeCam() {
+    if (this.interior?.active) return false;
     return this.freecam?.toggle() ?? false;
+  }
+
+  /* ================================================================ below decks */
+  _toggleInterior(on = !this.interior?.active) {
+    if (on === !!this.interior?.active || this.dead) return;
+    const input = this.app.input;
+    if (on) {
+      this.freecam?.setActive(false);
+      this._toggleAutopilot(false);
+      this.interior ||= new ShipInterior(this.app, this.game);
+      this.interior.resize(window.innerWidth, window.innerHeight);
+      this.interior.enter();
+      this.app.viewport.setScene(this.interior.scene, this.interior.camera);
+      this.ui.classList.add('below-decks');
+      document.body.classList.add('below-decks');
+      audio.stopEngine();
+      toast(isTouchScheme() ? 'Below decks · left side walks, right side looks · REPAIR at sparking stations' : 'Below decks · WASD walk, drag to look · hold E at a sparking station · I returns', 'good', 3600);
+    } else {
+      this.interior.exit();
+      this.app.viewport.setScene(this.scene, this.camera);
+      this.ui.classList.remove('below-decks');
+      document.body.classList.remove('below-decks');
+      audio.startEngine();
+      toast('Back on the bridge viewscreen', 'good', 1400);
+    }
+    input.consumeAll();
+    audio.ui();
+  }
+
+  _updateInterior(dt) {
+    const input = this.app.input;
+    input.update(dt);
+    const r = this.interior.update(dt, this.time, input, this.crewJob);
+    this._tickRepairs(dt);
+    if (input.consume('interior') || input.consume('back')) { this._toggleInterior(false); return; }
+    if (r.atLift && input.consume('ability')) { this._toggleInterior(false); return; }
+    input.consume('ability');
+    // HUD: where you are, what you can do here
+    const room = $('#ih-room', this.ui);
+    if (room) room.textContent = r.room.name;
+    const prompt = $('#ih-prompt', this.ui);
+    const btn = $('#ih-repair', this.ui);
+    let msg = '';
+    if (r.near && r.near.integrity < 0.999) {
+      const S = SYSTEMS[r.near.sys];
+      msg = this.interior.repairing ? `Repairing ${S.name}… ${Math.round(r.near.integrity * 100)}%` : `Hold ${isTouchScheme() ? 'REPAIR' : 'E'} to fix ${S.name} (${Math.round(r.near.integrity * 100)}%)`;
+    } else if (r.near) msg = `${SYSTEMS[r.near.sys].name} · all green`;
+    else if (r.atLift) msg = isTouchScheme() ? 'Turbolift — tap Back to flight' : 'Turbolift — press E to return to the bridge viewscreen';
+    if (prompt) { prompt.textContent = msg; prompt.hidden = !msg; }
+    if (btn) btn.hidden = !(r.near && r.near.integrity < 0.999);
+    this._mapT = (this._mapT || 0) + dt;
+    if (this._mapT > 0.15) { this._mapT = 0; this._drawMinimap(); }
+  }
+
+  /** Little deck plan: rooms, damaged ones red, you as an arrow, crew as dots. */
+  _drawMinimap() {
+    const cv = this.ui && $('#ih-map', this.ui);
+    if (!cv) return;
+    const g = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    const sx = (x) => W / 2 + x * (W / 18);
+    const sz = (z) => H - 6 - (z + 32) * ((H - 12) / 60);
+    const dmg = this.game.damage;
+    const roomSys = { phasers: 'weapons', shields: 'shields', engines: 'engines', sensors: 'sensors', engineering: 'warp' };
+    const box = (a, fill) => { g.fillStyle = fill; g.fillRect(sx(a.x0), sz(a.z1), sx(a.x1) - sx(a.x0), sz(a.z0) - sz(a.z1)); };
+    box(LAYOUT.corridor, 'rgba(120,160,200,.35)');
+    for (const room of LAYOUT.rooms) {
+      const sys = roomSys[room.id];
+      const v = sys ? dmg[sys] : 1;
+      box(room, v < 0.999 ? (v < BROKEN ? 'rgba(255,70,60,.75)' : 'rgba(255,170,60,.6)') : 'rgba(120,160,200,.5)');
+    }
+    for (const c of this.interior.crew) { g.fillStyle = '#ffd36b'; g.beginPath(); g.arc(sx(c.g.position.x), sz(c.g.position.z), 2.5, 0, 7); g.fill(); }
+    const p = this.interior.pos, y = this.interior.yaw;
+    g.save(); g.translate(sx(p.x), sz(p.z)); g.rotate(y); g.fillStyle = '#59e0ff';
+    g.beginPath(); g.moveTo(0, -6); g.lineTo(4, 4); g.lineTo(-4, 4); g.closePath(); g.fill(); g.restore();
   }
 
   /** Put the engine glow sprites at the current hull's thruster anchors. */
@@ -490,6 +584,11 @@ export class SystemScene {
                 <button class="btn sm ghost" id="leave-btn" style="min-height:26px;padding:4px 8px;font-size:9px">Galaxy map</button>
               </div>
             </div>
+            <div class="vitals damage-panel" id="damage-panel" hidden>
+              <div class="row between"><span class="tiny upper" style="font-size:8.5px;color:#ffb4ad">Damage report</span><span class="tiny faint">crew repairing</span></div>
+              <div class="dp-list"></div>
+              <button class="btn sm wide" id="below-btn" title="Walk inside the ship and repair it yourself (I)">⇩ Go below decks <span class="kbd">I</span></button>
+            </div>
             <div class="vitals orders-card" id="orders-card" style="padding:8px 12px" title="Open the mission log (M)">
               <div class="tiny upper faint" style="font-size:8.5px">Current orders</div>
               <div class="small" id="mission-line" style="line-height:1.35">—</div>
@@ -507,6 +606,14 @@ export class SystemScene {
           </div>
 
           <div class="combo" id="combo" aria-live="polite"></div>
+          <div class="interior-hud">
+            <div class="ih-top"><span class="ih-room" id="ih-room">Bridge</span>
+              <button class="btn sm" id="ih-back" title="Return to the bridge viewscreen (I or Esc)">⇧ Back to flight <span class="kbd">I</span></button></div>
+            <canvas class="ih-map" id="ih-map" width="120" height="180" aria-label="Deck plan"></canvas>
+            <div class="ih-prompt" id="ih-prompt" hidden></div>
+            <button class="act-btn repair" id="ih-repair" data-action="repair" data-hold="1" hidden title="Hold to repair (E)"><span class="ico">🔧</span><span class="lbl">REPAIR</span><span class="kc">E</span></button>
+            <div class="ih-cross"></div>
+          </div>
           <div class="crosshair"><div class="c"></div></div>
           <div class="target-reticle" id="reticle"><div class="ring"></div><div class="tl" id="reticle-label">TARGET</div></div>
           <div class="syslog" id="syslog"></div>
@@ -562,6 +669,8 @@ export class SystemScene {
     $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
     $('#auto-btn', this.ui).onclick = () => this._toggleAutopilot();
+    $('#below-btn', this.ui).onclick = () => this._toggleInterior(true);
+    $('#ih-back', this.ui).onclick = () => this._toggleInterior(false);
     $('#warp-btn', this.ui).onclick = () => {
       audio.ui();
       this.addLog('Opening the galaxy map — pick a star and engage warp.', 'good');
@@ -714,7 +823,7 @@ export class SystemScene {
     this.boosting = boosting;
     if (boosting) this.boost = Math.max(0, this.boost - dt * 0.34);
     else this.boost = Math.min(1, this.boost + dt * 0.16);
-    const baseSpeed = stats.speed;
+    const baseSpeed = stats.speed * damageEffects(this.game.damage).speed;
     const sprint = this.speedBoostTimer > 0 ? 1.45 : 1;
     // --- physics: engines push a real velocity; momentum carries through turns
     stepFlight(this.vel, this.player.quaternion, {
@@ -831,11 +940,17 @@ export class SystemScene {
     if ((input.actions.fire || autoFire) && this.fireCd <= 0) this._firePhasers();
     if (input.actions.torpedo && this.torpCd <= 0) this._fireTorpedo();
     if (input.consume('cam')) this.freecam?.toggle();
+    if (input.consume('interior')) { this._toggleInterior(true); return; }
     if (input.consume('land')) { this._landAtNearest(); return; }
     if (input.consume('ability')) this._useAbility();
     if (input.consume('scan')) this._scanAction();
     if (input.consume('target')) this._cycleTarget();
     if (input.consume('warp')) {
+      if (!damageEffects(this.game.damage).warp) {
+        toast('Warp core offline — repair it in Main Engineering (I)', 'warn', 2600);
+        audio.error();
+        return;
+      }
       audio.ui();
       toast('Select a star system, then Engage warp', 'good', 3000);
       this.app.setScene('galaxy');
@@ -893,7 +1008,7 @@ export class SystemScene {
 
   _firePhasers() {
     const stats = this.stats;
-    this.fireCd = 1 / (stats.fireRate * (this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 2 : 1));
+    this.fireCd = 1 / (stats.fireRate * damageEffects(this.game.damage).fireRate * (this.abilityTimer > 0 && ['overload', 'reactorOverdrive'].includes(this.game.shipClass.ability.id) ? 2 : 1));
     const target = this.target;
     const forward = V(0, 0, 1).applyQuaternion(this.player.quaternion);
     const muzzle = this._muzzleWorld('phaser');
@@ -1467,6 +1582,7 @@ export class SystemScene {
 
   _damagePlayer(amount, ignoreShield = false) {
     if (this.dead) return;
+    const hullBefore = this.hull;
     this.lastDamage = 0;
     let dmg = amount;
     // polarised hull plating (NX) and a separated saucer (Galaxy) both soak damage
@@ -1486,7 +1602,14 @@ export class SystemScene {
       this.shake = Math.max(this.shake, 0.6);
       this._flashDamage();
     }
-    if (this.hull <= 0) this._destroyPlayer();
+    if (this.hull <= 0) { this._destroyPlayer(); return; }
+    // hull damage can knock out a specific system somewhere on the ship
+    // (heat from a star or a black hole's shear wears the hull, not systems)
+    const hullHit = ignoreShield ? 0 : hullBefore - this.hull;
+    if (hullHit > 0) {
+      const hit = applyHit(this.game.damage, hullHit, this.maxHull);
+      if (hit && hit.after < hit.before) this._onSystemHit(hit);
+    }
   }
 
   _flashDamage() {
@@ -1506,6 +1629,61 @@ export class SystemScene {
     setTimeout(() => n.remove(), 1600);
   }
 
+  /** A system just took damage: tell the captain where, and what it costs. */
+  _onSystemHit({ system, after }) {
+    const S = SYSTEMS[system];
+    const pct = Math.round(after * 100);
+    const offline = after < BROKEN;
+    this.addLog(`Hull breach — ${S.name} damaged (${S.place}) · ${pct}%${offline ? ' · OFFLINE' : ''}`, 'hostile');
+    toast(`${S.name} hit! ${S.effect}${offline ? '' : ' (partly)'} — I to repair`, 'bad', 2600);
+    if (offline) { this._flashWarning(`${S.name.toUpperCase()} OFFLINE`); audio.alert(); }
+    this._refreshDamagePanel(true);
+    this.game.scheduleSave();
+  }
+
+  /** Engineering team + any hands-on repair; announces systems coming back. */
+  _tickRepairs(dt) {
+    const hand = this.interior?.active ? this.interior.repairing : null;
+    const { fixed, crewJob } = repairTick(this.game.damage, dt, { handSystem: hand });
+    this.crewJob = crewJob;
+    for (const f of fixed) {
+      const [id, tag] = f.split(':');
+      const S = SYSTEMS[id];
+      if (tag === 'online') this.addLog(`Engineering: ${S.name} back online`, 'good');
+      else {
+        this.addLog(`Engineering: ${S.name} fully repaired`, 'good');
+        toast(`${S.name} repaired`, 'good', 1800);
+        audio.upgrade?.();
+        this.game.state.stats.repairs = (this.game.state.stats.repairs || 0) + 1;
+        this.game.checkMissions();
+      }
+    }
+    this._dmgPanelT = (this._dmgPanelT || 0) + dt;
+    if (this._dmgPanelT > 0.3) { this._dmgPanelT = 0; this._refreshDamagePanel(); }
+  }
+
+  _refreshDamagePanel(force = false) {
+    const box = this.ui && $('#damage-panel', this.ui);
+    if (!box) return;
+    const d = this.game.damage;
+    const hurt = SYSTEM_IDS.filter((k) => d[k] < 0.999).sort((a, b) => d[a] - d[b]);
+    box.hidden = !hurt.length;
+    if (!hurt.length) return;
+    const key = hurt.map((k) => `${k}${Math.round(d[k] * 50)}`).join('|') + (this.crewJob || '');
+    if (!force && key === this._dmgKey) return;
+    this._dmgKey = key;
+    box.querySelector('.dp-list').innerHTML = hurt.map((k) => {
+      const S = SYSTEMS[k];
+      const v = d[k];
+      const cls = v < BROKEN ? 'red' : 'amber';
+      return `<div class="dp-row ${v < BROKEN ? 'off' : ''}">
+        <div class="row between"><b>${S.name}</b><span>${Math.round(v * 100)}%${this.crewJob === k ? ' · crew' : ''}</span></div>
+        <div class="bar thin ${cls}"><i style="width:${v * 100}%"></i></div>
+        <small>${S.place} · ${S.effect}</small>
+      </div>`;
+    }).join('');
+  }
+
   _destroyPlayer() {
     if (this.dead) return;
     this.dead = true;
@@ -1517,6 +1695,7 @@ export class SystemScene {
     const loss = Math.round(this.game.state.credits * 0.05);
     this.game.state.credits = Math.max(0, this.game.state.credits - loss);
     this.game.state.stats.deaths++;
+    this.game.repairAll();   // the replacement hull comes out of drydock whole
     this.game.save(true);
     this.game.checkMissions();
     setTimeout(() => {
@@ -1802,6 +1981,11 @@ export class SystemScene {
 
   _scanAction() {
     if (this.scanCd > 0) return;
+    if (!damageEffects(this.game.damage).sensors) {
+      toast('Sensor Array offline — repair it (I: go below decks)', 'warn');
+      audio.error();
+      return;
+    }
     const near = this._nearestScannable();
     if (!near || !near.inRange) {
       toast('No survey target in range — fly closer to a planet or anomaly', 'warn');
@@ -2186,6 +2370,7 @@ export class SystemScene {
     this.time += dt;
     if (!this.built || !this.ui) return;
     const capped = Math.min(dt, 0.05);
+    if (this.interior?.active) { this._updateInterior(capped); return; }
     if (!this.dead) {
       this._handleInput(capped);
       this._updateEnemies(capped);
@@ -2193,13 +2378,14 @@ export class SystemScene {
       this._updateClones(capped);
       this._updateSaucerSection(capped);
       this._updateLoot(capped);
+      this._tickRepairs(capped);
       if (this.combo?.timer > 0) {
         this.combo.timer -= capped;
         if (this.combo.timer <= 0) this._showCombo();
       }
       this.lastDamage += capped;
       if (this.lastDamage > 3.5 && this.shield < this.maxShield) {
-        this.shield = Math.min(this.maxShield, this.shield + this.stats.regen * capped);
+        this.shield = Math.min(this.maxShield, this.shield + this.stats.regen * damageEffects(this.game.damage).regen * capped);
       }
       const speedLevel = clamp(this.speed / 100, 0, 1);
       audio.setEngine(speedLevel);
@@ -2222,5 +2408,6 @@ export class SystemScene {
   resize(w, h) {
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
+    this.interior?.resize(w, h);
   }
 }

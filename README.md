@@ -52,6 +52,26 @@ assist is 35% stronger because a thumb is less precise than a mouse.
 **Weapons are manual.** `D` and the cursor both turn the ship the way you point them, and phasers only fire while
 you hold the trigger — the old hands-free *Auto-fire* mode is off by default and lives in Settings if you want it back.
 
+### Damage, repairs and walking inside the ship
+
+Hull hits can knock out a specific system somewhere on the ship — the **Phaser Bay** (phasers fire slower),
+**Shield Generator** (shields stop recharging), **Impulse Engines** (lower top speed), **Sensor Array** (no scans
+or targeting assist) or the **Warp Core** (no warp). The damage report on the HUD says what broke and where.
+
+Your engineering team repairs one system at a time on its own. To fix things faster, press **I** (or *Go below
+decks*) and walk inside your ship: bridge, corridor, four system rooms and main engineering with the warp core.
+Broken stations spark and flash red, the two engineers walk to whatever they are working on, and a deck plan in
+the corner shows damaged rooms in red. Stand at a sparking console and **hold E** (or the **REPAIR** button).
+Docking at the Shipyard repairs everything. Inside: `W A S D` walk, `Shift` run, drag or arrow keys to look,
+`I` / `Esc` / the turbolift to return.
+
+### Everything works from the keyboard
+
+Press **?** (or **F1**) on any screen for the full list. Highlights: on the galaxy map ← → step through stars and
+Enter warps; on Earth 1–7 pick a district and Enter builds it where the screen centre points; in the Shipyard ↑ ↓
+pick a ship, Enter commissions it and N opens the designer; `[` and `]` open the side panels everywhere; in flight
+`[` `]` swing the camera around the ship and `-` `=` zoom. Every button can also be reached with Tab.
+
 ### Looking at the ship
 
 Two buttons sit at the top of the screen, on every screen, above the panels:
