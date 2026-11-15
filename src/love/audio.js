@@ -35,7 +35,9 @@ function impulse(ctx, seconds = 3.4, decay = 2.6) {
 }
 
 export class LoveSong {
-  constructor() {
+  /** music: false keeps only the tap chimes, for when a recorded song plays instead */
+  constructor({ music = true } = {}) {
+    this.music = music;
     this.ctx = null;
     this.muted = false;
     this.bar = 0;
@@ -80,6 +82,7 @@ export class LoveSong {
     this.dry.connect(this.master);
     this.dry.connect(this.reverb);
 
+    if (!this.music) return;
     this.next = ctx.currentTime + 0.15;
     this.timer = setInterval(() => this.schedule(), 100);
     this.schedule();
