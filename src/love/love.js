@@ -802,7 +802,39 @@ function frame(now) {
 }
 
 /* ------------------------------------------------------------- controls */
-const song = new LoveSong();
+// the soundtrack: "Calm" by prettyjohn1; if it can't load, the built-in song plays instead
+const MUSIC_URL = 'https://raw.githubusercontent.com/Ghanimsokaki/jbuf/main/prettyjohn1-calm-537656.mp3';
+const track = new Audio(MUSIC_URL);
+track.loop = true;
+track.preload = 'auto';
+track.volume = 0;
+const song = new LoveSong({ music: false });
+let muted = false;
+
+function fadeTrack(to, ms = 2500) {
+  const from = track.volume;
+  const start = performance.now();
+  const step = () => {
+    const k = Math.min(1, (performance.now() - start) / ms);
+    track.volume = from + (to - from) * k;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function playMusic() {
+  song.start();
+  track.currentTime = 0;
+  track.play().then(() => fadeTrack(muted ? 0 : 0.8)).catch(() => {
+    // no recorded song available: fall back to the generated one
+    song.music = true;
+    song.ctx && song.ctx.close();
+    song.ctx = null;
+    song.start();
+    song.setMuted(muted);
+  });
+}
+
 const intro = document.getElementById('intro');
 const soundBtn = document.getElementById('sound');
 
@@ -826,7 +858,7 @@ function begin() {
 document.getElementById('start').addEventListener('click', () => {
   intro.classList.add('gone');
   soundBtn.hidden = false;
-  song.start();
+  playMusic();
   begin();
 });
 
@@ -834,10 +866,15 @@ soundBtn.addEventListener('click', () => {
   const on = soundBtn.getAttribute('aria-pressed') === 'true';
   soundBtn.setAttribute('aria-pressed', String(!on));
   soundBtn.setAttribute('aria-label', on ? 'Play music' : 'Mute music');
+  muted = on;
   song.setMuted(on);
+  fadeTrack(on ? 0 : 0.8, 500);
 });
 
-document.getElementById('replay').addEventListener('click', begin);
+document.getElementById('replay').addEventListener('click', () => {
+  track.currentTime = 0;
+  begin();
+});
 
 window.addEventListener('pointerdown', (e) => {
   if (!started || e.target.closest('button')) return;
