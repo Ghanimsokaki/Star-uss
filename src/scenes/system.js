@@ -18,6 +18,7 @@ import { stepFlight, massFor, collideSphere, autopilotControls } from '../core/f
 import { SYSTEMS, SYSTEM_IDS, applyHit, repairTick, effects as damageEffects, BROKEN } from '../core/damage.js';
 import { ShipInterior, LAYOUT } from './interior.js';
 import { bindKeys } from '../ui/keys.js';
+import { floatNumber, destroyedStamp, hitArrow, redAlert, jolt } from '../ui/battlefx.js';
 import { showMissionLog } from '../ui/menus.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -262,6 +263,20 @@ export class SystemScene {
       pivot.add(node);
       this.systemRoot.add(pivot);
       this.planetNodes.push({ pivot, node, planet, data: p, orbitR, angle: p.phase || i * 1.1, speed: 0.006 / (1 + i * 0.4), radius });
+      // moons: orbit their planet, and can be landed on like any world
+      (p.moonList || []).forEach((m, k) => {
+        const mr = Math.max(4, m.visualRadius * 9);
+        const mPivot = new THREE.Group();
+        mPivot.rotation.x = m.tilt;
+        const mNode = new THREE.Group();
+        const dist = radius * (2.6 + k * 1.5) + mr * 2;
+        mNode.position.x = dist;
+        const moon = makePlanet({ typeId: m.type, seed: m.seed, radius: mr, quality: this.quality * 0.8, name: m.name });
+        mNode.add(moon);
+        mPivot.add(mNode);
+        node.add(mPivot);
+        this.planetNodes.push({ pivot: mPivot, node: mNode, planet: moon, data: m, orbitR: dist, angle: m.phase, speed: 0.05 / (1 + k), radius: mr, moon: true });
+      });
     });
 
     // station
@@ -606,6 +621,7 @@ export class SystemScene {
           </div>
 
           <div class="combo" id="combo" aria-live="polite"></div>
+          <div class="bfx-layer" id="bfx-layer" aria-hidden="true"></div>
           <div class="interior-hud">
             <div class="ih-top"><span class="ih-room" id="ih-room">Bridge</span>
               <button class="btn sm" id="ih-back" title="Return to the bridge viewscreen (I or Esc)">⇧ Back to flight <span class="kbd">I</span></button></div>
@@ -665,6 +681,8 @@ export class SystemScene {
       </div>`);
     document.getElementById('ui').appendChild(this.ui);
     this._labelsEl = $('#obj-labels', this.ui);
+    this._fxLayer = $('#bfx-layer', this.ui);
+    this._redAlerted = false;
     $('#leave-btn', this.ui).onclick = () => { audio.ui(); this.app.setScene('galaxy'); };
     $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
@@ -1541,6 +1559,13 @@ export class SystemScene {
   _damageEnemy(enemy, amount) {
     if (!enemy || enemy.dead) return;
     let dmg = this.markTimer > 0 ? amount * 1.35 : amount;
+    enemy._numAcc = (enemy._numAcc || 0) + dmg;
+    enemy._numKind = enemy.shield > 0 ? 'shield' : (amount > 120 ? 'crit' : 'hull');
+    if (this.time - (enemy._numT || 0) > 0.22) {
+      enemy._numT = this.time;
+      floatNumber(this._fxLayer, this.camera, enemy.group.position, enemy._numAcc, enemy._numKind);
+      enemy._numAcc = 0;
+    }
     if (enemy.shield > 0) {
       enemy.shield -= dmg;
       enemy.bubble.material.opacity = 0.42;
@@ -1573,6 +1598,7 @@ export class SystemScene {
     toast(`+${fmtC(reward.credits)} · +${reward.dilithium} dilithium · +${reward.xp} XP${mult > 1 ? ` · ×${mult}` : ''}`, 'good');
     this._showCombo();
     this._spawnLoot(pos, enemy);
+    destroyedStamp(this._fxLayer, this.camera, pos, escapeHtml(enemy.def.label || enemy.def.name), `+${fmtC(reward.credits)}${mult > 1 ? ` · ×${mult}` : ''}`);
     this.fleetKilled++;
     if (this.target === enemy) this.target = null;
     this._refreshMissionLine();
@@ -1591,6 +1617,7 @@ export class SystemScene {
       if (this.saucerTimer > 0) dmg *= 0.5;
       if (this.guardTimer > 0) dmg *= 0.45;
     }
+    const shieldBefore = this.shield;
     if (!ignoreShield && this.shield > 0) {
       this.shield -= dmg;
       audio.shieldHit();
@@ -1603,6 +1630,11 @@ export class SystemScene {
       this._flashDamage();
     }
     if (this.hull <= 0) { this._destroyPlayer(); return; }
+    if (this.hull < hullBefore) jolt(this.ui && $('.hud-top .vitals', this.ui));
+    if (shieldBefore > this.maxShield * 0.2 && this.shield <= this.maxShield * 0.2 && !ignoreShield) {
+      this._flashWarning('SHIELDS FAILING');
+      audio.alert();
+    }
     // hull damage can knock out a specific system somewhere on the ship
     // (heat from a star or a black hole's shear wears the hull, not systems)
     const hullHit = ignoreShield ? 0 : hullBefore - this.hull;
@@ -1655,6 +1687,7 @@ export class SystemScene {
         toast(`${S.name} repaired`, 'good', 1800);
         audio.upgrade?.();
         this.game.state.stats.repairs = (this.game.state.stats.repairs || 0) + 1;
+        if (id === hand) this.game.state.stats.handRepairs = (this.game.state.stats.handRepairs || 0) + 1;
         this.game.checkMissions();
       }
     }
@@ -1840,19 +1873,20 @@ export class SystemScene {
     for (const p of this.planetNodes || []) {
       const c = p.node.getWorldPosition(V());
       const hit = collideSphere(pos, this.vel, c, p.radius * 1.02, shipR, 0.3);
-      if (hit > 6) this._impact(hit, `Impact with ${p.data.name}`);
+      if (hit > 6) this._collisionImpact(hit, `Impact with ${p.data.name}`);
     }
     for (const e of this.enemies || []) {
       if (e.dead) continue;
       const hit = collideSphere(pos, this.vel, e.group.position, (e.radius || 3) * 0.8, shipR, 0.5);
       if (hit > 4) {
-        this._impact(hit * 0.6, 'Collision!');
+        this._collisionImpact(hit * 0.6, 'Collision!');
         if (typeof e.hp === 'number') { e.hp -= hit * 0.8; if (e.hp <= 0) this._killEnemy(e); }
       }
     }
   }
 
-  _impact(speed, msg) {
+  /** A collision (not a weapon hit — that is _impact(pos, color) above). */
+  _collisionImpact(speed, msg) {
     if (this.time - (this._lastImpact || 0) < 0.35) return;
     this._lastImpact = this.time;
     this._damagePlayer(Math.min(60, speed * 0.55));
@@ -1917,9 +1951,12 @@ export class SystemScene {
     const entry = this.planetNodes?.find((n) => n.data.id === planetId);
     if (!entry || !this.player) return;
     const centre = entry.node.getWorldPosition(V());
-    const out = V().copy(centre).normalize();
-    const at = centre.clone().add(out.multiplyScalar(entry.radius * 2.4 + 70));
-    at.y += entry.radius * 0.3;
+    // park above the world (moons orbit around its middle, so up is always clear)
+    // and a little sunward-out, looking down at what you just left
+    const out = V(centre.x, 0, centre.z).normalize();
+    const at = centre.clone()
+      .add(V(0, entry.radius + 46, 0))
+      .add(out.multiplyScalar(entry.radius * 0.6 + 12));
     this.player.position.copy(at);
     this.player.lookAt(centre.x, centre.y, centre.z); // nose +Z, so we face the planet
     this.speed = 0;
@@ -1932,12 +1969,15 @@ export class SystemScene {
     const p = this.player.position;
     let best = null;
     let bestD = Infinity;
+    let bestCentre = Infinity;
     for (const node of this.planetNodes) {
       if (!this.game.constructor.canLand(node.data)) continue;
-      const d = node.node.getWorldPosition(V()).distanceTo(p);
-      if (d < bestD) { bestD = d; best = node.data; }
+      const centre = node.node.getWorldPosition(V()).distanceTo(p);
+      // closest SURFACE wins: hovering over a big planet beats its little moon's centre
+      const d = centre - (node.radius || 0);
+      if (d < bestD) { bestD = d; bestCentre = centre; best = node.data; }
     }
-    return best ? { data: best, dist: bestD, inRange: bestD <= 210 } : null;
+    return best ? { data: best, dist: Math.max(0, bestD), inRange: bestCentre <= 210 } : null;
   }
 
   _updateLandPrompt() {
@@ -2207,6 +2247,7 @@ export class SystemScene {
             this._impact(p.mesh.position.clone(), '#a7f0ff');
           } else {
             this._damagePlayer(p.damage);
+            if (p.vel) hitArrow(this._fxLayer, this.camera, this.player.position.clone().addScaledVector(p.vel, -1));
             this._impact(p.mesh.position.clone(), '#ff8a6d');
           }
           hit = true;
@@ -2373,7 +2414,18 @@ export class SystemScene {
     if (this.interior?.active) { this._updateInterior(capped); return; }
     if (!this.dead) {
       this._handleInput(capped);
+      // input can leave the scene (land, warp, below decks): stop this frame there
+      if (!this.player || this.app.current !== this || this.interior?.active) return;
       this._updateEnemies(capped);
+      if (!this._redAlerted) {
+        const close = this.enemies.some((e) => !e.dead && e.group.position.distanceTo(this.player.position) < 700);
+        if (close) {
+          this._redAlerted = true;
+          redAlert(this._fxLayer);
+          audio.alert();
+          this.addLog('Red alert — hostile closing. Shields up.', 'hostile');
+        }
+      }
       this._updateProjectiles(capped);
       this._updateClones(capped);
       this._updateSaucerSection(capped);

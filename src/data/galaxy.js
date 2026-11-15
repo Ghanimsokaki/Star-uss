@@ -260,7 +260,55 @@ export function buildGalaxy(seed = 'alpha') {
   });
 
   const byId = Object.fromEntries(systems.map((s) => [s.id, s]));
+  // moons come from each planet's own seed, so adding them changed nothing else
+  for (const sys of systems) for (const p of sys.planets) p.moonList = makeMoons(p, sys);
   return { systems, lanes, byId, seed };
+}
+
+/* ------------------------------------------------------------------ moons */
+const MOON_TYPES = ['barren', 'barren', 'ice', 'volcanic', 'desert'];
+const MOON_SUFFIX = ['a', 'b'];
+
+/**
+ * Up to two landable moons per planet. Low gravity (0.1 – 0.35 g), so the away
+ * team can really jump. Earth's moon is Luna, with the real lunar surface.
+ */
+export function makeMoons(planet, system) {
+  const earth = planet.id === 'sol-p2';           // Sol III always has Luna
+  const n = earth ? 1 : Math.min(2, planet.moons || 0);
+  const rng = new RNG(`moon:${planet.seed}`);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const luna = earth && k === 0;
+    const type = luna ? 'barren' : rng.pick(MOON_TYPES);
+    const t = PLANET_TYPES[type];
+    out.push({
+      id: `${planet.id}-m${k}`,
+      name: luna ? 'Luna' : `${planet.name}-${MOON_SUFFIX[k]}`,
+      type,
+      typeName: `${t.name.split(' ')[0]} Moon`,
+      isMoon: true,
+      parentId: planet.id,
+      radiusKm: Math.round(rng.range(400, 2600)),
+      orbit: 0,
+      phase: rng.range(0, Math.PI * 2),
+      tilt: rng.range(-0.3, 0.3),
+      visualRadius: +(planet.visualRadius * rng.range(0.18, 0.3)).toFixed(2),
+      moons: 0,
+      gravity: luna ? 0.17 : +rng.range(0.1, 0.35).toFixed(2),
+      temperature: Math.round(rng.range(...(t.temp || [-200, 120]))),
+      resources: {
+        dilithium: Math.round(rng.range(6, 40)),
+        minerals: Math.round(rng.range(40, 260)),
+        research: Math.round(rng.range(10, 70)),
+      },
+      signs: { ruins: rng.chance(0.15), life: false, anomaly: rng.chance(0.25) },
+      // 1e6 picks the real Moon photograph for Luna (see environment.js REAL_SURFACES)
+      seed: luna ? 1000000 : rng.int(1, 999999),
+      surveyed: false,
+    });
+  }
+  return out;
 }
 
 export function warpCost(from, to) {
@@ -275,8 +323,11 @@ export function systemById(galaxy, id) {
 
 export function planetById(galaxy, id) {
   for (const system of galaxy.systems) {
-    const planet = system.planets.find((p) => p.id === id);
-    if (planet) return { system, planet };
+    for (const p of system.planets) {
+      if (p.id === id) return { system, planet: p };
+      const moon = p.moonList?.find((m) => m.id === id);
+      if (moon) return { system, planet: moon, parent: p };
+    }
   }
   return null;
 }

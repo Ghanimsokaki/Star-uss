@@ -147,6 +147,20 @@ export function showSettings(app) {
         </div>
       </div>
       <div class="setting-row">
+        <div><div class="nm">AI ship's computer</div><div class="ds">Optional. Uses Puter.js so people on planets can answer your questions and the computer (F2) can help. Needs a free Puter account — ask a parent or guardian before switching it on.</div></div>
+        <div class="seg" data-seg="ai">
+          <button data-ai="on" class="${g.state.settings.aiComputer ? 'on' : ''}">On</button>
+          <button data-ai="off" class="${!g.state.settings.aiComputer ? 'on' : ''}">Off</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Computer voice</div><div class="ds">Read the computer's answers aloud (AI must be on)</div></div>
+        <div class="seg" data-seg="aivoice">
+          <button data-av="on" class="${g.state.settings.aiVoice ? 'on' : ''}">On</button>
+          <button data-av="off" class="${!g.state.settings.aiVoice ? 'on' : ''}">Off</button>
+        </div>
+      </div>
+      <div class="setting-row">
         <div><div class="nm">Hold 60 FPS</div><div class="ds">Automatically lowers resolution, then anti-aliasing and bloom, whenever the frame rate dips — and raises them again when there is headroom</div></div>
         <div class="seg" data-seg="perf">
           <button data-p="on" class="${g.state.settings.autoPerf !== false ? 'on' : ''}">On</button>
@@ -214,6 +228,19 @@ export function showSettings(app) {
     g.state.settings.quality = q;
     app.applyQuality(q);
     g.save();
+  }));
+  elm.querySelectorAll('[data-seg="ai"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="ai"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.aiComputer = b.dataset.ai === 'on';
+    g.save();
+    audio.ui();
+    if (g.state.settings.aiComputer) toast('AI computer on — press F2 to talk to it. Puter may ask you to sign in.', 'good', 3600);
+  }));
+  elm.querySelectorAll('[data-seg="aivoice"] button').forEach((b) => b.addEventListener('click', () => {
+    elm.querySelectorAll('[data-seg="aivoice"] button').forEach((x) => x.classList.toggle('on', x === b));
+    g.state.settings.aiVoice = b.dataset.av === 'on';
+    g.save();
+    audio.ui();
   }));
   elm.querySelectorAll('[data-seg="perf"] button').forEach((b) => b.addEventListener('click', () => {
     elm.querySelectorAll('[data-seg="perf"] button').forEach((x) => x.classList.toggle('on', x === b));
@@ -548,4 +575,79 @@ export async function showControls(app) {
     footer: '<button class="btn ghost" data-close2>Close</button>',
   });
   m.el.querySelector('[data-close2]').onclick = () => m.close();
+}
+
+/* ------------------------------------------------------------------ AI computer */
+/**
+ * A little chat window. `brief` sets who answers; `intro` is their first line.
+ * Falls back to `fallback(question)` when AI is off or unavailable.
+ */
+export async function showAiChat(app, { title, sub, brief, intro, fallback, placeholder = 'Ask a question…' }) {
+  const ai = await import('../core/aicomputer.js');
+  const g = app.game;
+  const on = ai.aiEnabled(g);
+  const history = [];
+  const m = modal({
+    title, sub,
+    body: `<div class="ai-log" data-log></div>
+      <form class="ai-form" data-form>
+        <input type="text" data-q maxlength="240" autocomplete="off" placeholder="${escapeHtml(placeholder)}" aria-label="Your message">
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+      <p class="tiny faint" style="margin:8px 0 0">${on ? 'AI answers by Puter.js · keep personal details private' : 'AI is off (Settings → AI ship\u2019s computer) — you get the built-in answers.'}</p>`,
+    footer: '<button class="btn ghost" data-close2>Close</button>',
+  });
+  const log = m.el.querySelector('[data-log]');
+  const add = (who, text, cls = '') => {
+    const row = document.createElement('div');
+    row.className = `ai-msg ${who} ${cls}`;
+    row.textContent = text;
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    return row;
+  };
+  if (intro) add('them', intro);
+  m.el.querySelector('[data-form]').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = m.el.querySelector('[data-q]');
+    const q = ai.cleanInput(input.value);
+    if (!q) return;
+    input.value = '';
+    add('me', q);
+    history.push({ role: 'user', content: q });
+    const wait = add('them', '…', 'thinking');
+    let answer = '';
+    if (on) {
+      const res = await ai.chat(typeof brief === 'function' ? brief() : brief, history);
+      if (res.ok) answer = res.text;
+    }
+    if (!answer) answer = fallback ? fallback(q) : 'Unable to comply.';
+    wait.textContent = answer;
+    wait.classList.remove('thinking');
+    history.push({ role: 'assistant', content: answer });
+    if (on && g.state.settings.aiVoice) ai.speak(answer);
+  });
+  m.el.querySelector('[data-close2]').onclick = () => m.close();
+  setTimeout(() => m.el.querySelector('[data-q]')?.focus(), 60);
+  return m;
+}
+
+export async function showComputer(app) {
+  const ai = await import('../core/aicomputer.js');
+  const g = app.game;
+  return showAiChat(app, {
+    title: 'Ship\u2019s Computer', sub: `${g.shipRecord?.name || 'Starship'} · library computer access`,
+    intro: 'Working. How may I assist you, Captain?',
+    placeholder: 'e.g. "How do I fix the warp core?"',
+    brief: () => `You are the calm, helpful ship's computer. Answer the captain's questions about what to do next in the game using this status: ${ai.situation(g, app)}`,
+    fallback: (q) => {
+      const t = q.toLowerCase();
+      const m = g.currentMission;
+      if (/repair|fix|broken|damage/.test(t)) return 'Press I to go below decks, walk to the sparking station and hold E. Docking at the Shipyard repairs everything.';
+      if (/warp|travel|galaxy/.test(t)) return 'Press T or open the Galaxy map, choose a star with the arrow keys, then press Enter to engage warp.';
+      if (/moon|jump|land/.test(t)) return 'Fly close to a planet or moon and press L to land. On moons, Space makes you jump very high.';
+      if (/control|key|how/.test(t)) return 'Press ? at any time to see every control for the screen you are on.';
+      return m ? `Current orders: ${m.title}. ${m.hint}.` : 'All orders complete. Exploration of the galaxy is recommended.';
+    },
+  });
 }

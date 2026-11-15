@@ -18,7 +18,7 @@
  */
 import * as THREE from 'three';
 import { buildShip } from '../art/ships3d.js';
-import { makeStars, glowSprite } from '../art/environment.js';
+import { makeStars, glowSprite, makePlanet } from '../art/environment.js';
 import {
   buildTerrain, buildSky, buildScatter, buildDeposit, buildPerson,
   heightAt, biomeFor, BIOMES, PAD_RADIUS, PAD_BLEND, mulberry, ringPoint,
@@ -28,6 +28,7 @@ import { el, $, toast, modal, fmtC } from '../ui/dom.js';
 import { initDrawers } from '../ui/drawers.js';
 import { audio } from '../core/audio.js';
 import { isTouchScheme } from '../core/device.js';
+import { stepVertical, slopeLimited, jumpHeight, AIR_CONTROL } from '../core/walker.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -115,6 +116,7 @@ export class PlanetScene {
     }
     this.planet = found.planet;
     this.system = found.system;
+    this.parentPlanet = found.parent || null;   // set when this world is a moon
     this.biome = biomeFor(this.planet.type);
     this._seed = this.planet.seed || 1;
     this.rng = mulberry(this._seed + 17);
@@ -166,9 +168,21 @@ export class PlanetScene {
     this._built = true;
     const b = this.biome;
 
-    s.fog = new THREE.Fog(b.fog, 90, 460);
-    s.add(buildSky({ type: this.planet.type }));
-    s.add(makeStars(1200, 3800));
+    const moon = !!this.planet.isMoon;
+    // moons have no air: a black sky, no haze, stars right down to the horizon
+    s.fog = moon ? null : new THREE.Fog(b.fog, 90, 460);
+    s.add(buildSky({ type: moon ? 'barren' : this.planet.type }));
+    s.add(makeStars(moon ? 2400 : 1200, 3800));
+    if (moon && this.parentPlanet) {
+      // the world this moon orbits, hanging huge over the horizon
+      const pp = this.parentPlanet;
+      const big = makePlanet({ typeId: pp.type, seed: pp.seed, radius: pp.type === 'gas' ? 520 : 300, quality: 1, name: pp.name });
+      big.position.set(380, 560, -1700);
+      big.rotation.z = 0.35;
+      big.traverse((o) => { if (o.material) o.material.fog = false; });
+      s.add(big);
+      this.skyPlanet = big;
+    }
 
     // sun
     const sunPos = V(-260, 180, -320);
@@ -438,6 +452,9 @@ export class PlanetScene {
           <button class="act-btn scan" id="ph-scan" data-ph="scan" title="Scan the nearest deposit (R)">
             <span class="ico">⌖</span><span class="lbl">SCAN</span><span class="kc">R</span>
           </button>
+          <button class="act-btn jump" id="ph-jump" title="Jump (Space)">
+            <span class="ico">⤊</span><span class="lbl">JUMP</span><span class="kc">SPC</span>
+          </button>
           <button class="act-btn leave" id="ph-leave" data-ph="leave" title="Return to orbit (L)">
             <span class="ico">⤒</span><span class="lbl">ORBIT</span><span class="kc">L</span>
           </button>
@@ -454,6 +471,7 @@ export class PlanetScene {
     $('#ph-leave', this.ui).onclick = () => this._leave();
     $('#ph-talk', this.ui).onclick = () => this._talk();
     $('#ph-scan', this.ui).onclick = () => this._scan();
+    $('#ph-jump', this.ui).addEventListener('pointerdown', (e) => { e.preventDefault(); this._jumpQueued = true; });
 
     // the flight stick is an input method here too, so walking works on a phone
     this.app.input.bindStick($('#stick', this.ui), $('#stick-knob', this.ui));
@@ -565,8 +583,15 @@ export class PlanetScene {
       this.camZoom = clamp(this.camZoom * Math.exp((e.deltaY || 0) * 0.0011), 0.5, 2.6);
     };
     window.addEventListener('wheel', wheel, { passive: true });
+    // Space jumps: caught on keydown so a quick tap between frames still counts
+    const onJumpKey = (e) => {
+      if (e.key !== ' ' || e.repeat || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '')) return;
+      this._jumpQueued = true;
+    };
+    window.addEventListener('keydown', onJumpKey);
 
     this._off.push(() => {
+      window.removeEventListener('keydown', onJumpKey);
       canvas.removeEventListener('pointerdown', down);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -635,9 +660,25 @@ export class PlanetScene {
         <p class="small dim" style="line-height:1.6;margin-top:0">${escapeHtml(u.line)}</p>
         ${reward}
         <p class="tiny faint" style="margin-top:12px">The away team will remember this conversation.</p>`,
-      footer: '<button class="btn primary" data-close>Understood</button>',
+      footer: '<button class="btn ghost" data-ask>Ask them something</button><button class="btn primary" data-close>Understood</button>',
     });
     m.el.querySelector('[data-close]').onclick = () => m.close();
+    m.el.querySelector('[data-ask]').onclick = async () => {
+      m.close();
+      const { showAiChat } = await import('../ui/menus.js');
+      const p = this.planet;
+      showAiChat(this.app, {
+        title: u.name, sub: `${u.role} · ${p.name}`,
+        intro: u.line,
+        placeholder: `Ask ${u.name} about ${p.name}…`,
+        brief: `You are ${u.name}, a ${u.role} living on ${p.name}${p.isMoon ? ' (a moon)' : ''}, a ${p.typeName} in the ${this.system.name} system. Gravity ${p.gravity} g, temperature ${p.temperature} °C. A friendly Starfleet away team captain is visiting. Talk about life here, the landscape, the glowing mineral deposits nearby and space travel. Invent fun, harmless details.`,
+        fallback: () => [
+          `Out here on ${p.name} we keep things simple. Scan the glowing deposits — they are worth a fortune.`,
+          `Gravity here is ${p.gravity} g. ${p.gravity < 0.5 ? 'Try jumping — it never gets old!' : 'Mind your step on the slopes.'}`,
+          `Not many captains land on ${p.name}. Safe travels back to your ship.`,
+        ][Math.floor(Math.random() * 3)],
+      });
+    };
     this._renderLog();
   }
 
@@ -744,6 +785,7 @@ export class PlanetScene {
     this._interactKeys();
 
     this._moveAwayTeam(dt);
+    if (this.skyPlanet) this.skyPlanet.rotation.y += dt * 0.01;
     this._updateFollowers(dt);
     this._updatePeople(dt);
     this._updateDeposits(dt);
@@ -771,29 +813,49 @@ export class PlanetScene {
     const running = keys.has('shift') || input.actions?.boost;
     const speed = (running ? RUN_SPEED : WALK_SPEED) * (this.camZoom > 1.4 ? 1.15 : 1);
 
+    // --- physics: momentum on the ground, drift in the air, gravity of THIS world
+    const gravity = Math.max(0.05, Number(this.planet.gravity) || 1);
+    const ground0 = Math.max(heightAt(this.player.position.x, this.player.position.z, this._seed), this.biome.waterLevel + 0.2);
+    if (!this.body) this.body = { y: ground0, vy: 0, grounded: true };
+    if (!this.hVel) this.hVel = V();
+    const want = V();
     if (moving) {
       // move relative to where the camera is looking
       const forward = V(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)).normalize();
       const right = V(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw)).normalize();
-      const dir = V()
-        .addScaledVector(forward, sy)
-        .addScaledVector(right, sx);
-      if (dir.lengthSq() > 0.0001) {
-        dir.normalize();
-        this.player.position.addScaledVector(dir, speed * dt);
-        // face the way we walk, smoothly
-        const want = Math.atan2(dir.x, dir.z);
-        this.player.rotation.y = dampAngleLocal(this.player.rotation.y, want, 12, dt);
-        this.walkPhase += dt * (running ? 13 : 9);
+      want.addScaledVector(forward, sy).addScaledVector(right, sx);
+      if (want.lengthSq() > 0.0001) {
+        want.normalize();
+        const face = Math.atan2(want.x, want.z);
+        this.player.rotation.y = dampAngleLocal(this.player.rotation.y, face, 12, dt);
+        if (this.body.grounded) this.walkPhase += dt * (running ? 13 : 9);
       }
+      want.multiplyScalar(speed);
     } else {
       this.walkPhase = damp(this.walkPhase, 0, 8, dt);
     }
+    // feet on the ground: quick to start and stop. In the air: you keep going.
+    this.hVel.lerp(want, this.body.grounded ? 1 - Math.exp(-14 * dt) : AIR_CONTROL * dt * 3);
+    if (this.body.grounded && want.lengthSq() === 0 && this.hVel.lengthSq() < 0.01) this.hVel.set(0, 0, 0);
+    const [dx, dz] = slopeLimited(this.player.position.x, this.player.position.z, this.hVel.x * dt, this.hVel.z * dt,
+      (x, z) => heightAt(x, z, this._seed), this.body.grounded);
+    this.player.position.x += dx;
+    this.player.position.z += dz;
+
+    const jump = this._jumpQueued || input.consume?.('jump');
+    this._jumpQueued = false;
+    const groundNow = Math.max(heightAt(this.player.position.x, this.player.position.z, this._seed), this.biome.waterLevel + 0.2);
+    const res = stepVertical(this.body, groundNow, gravity, jump && this.body.grounded, dt);
+    if (jump && !this.body.grounded && this.body.vy > 0) {
+      audio.ui();
+      this.game.state.stats.jumps = (this.game.state.stats.jumps || 0) + 1;
+      if (this.body.vy > 0 && jumpHeight(gravity) > 2 && !this._toldLowG) { this._toldLowG = true; toast(`Low gravity · ${gravity} g — you jump ${jumpHeight(gravity).toFixed(1)} m high!`, 'good', 2600); }
+    }
+    if (res.landed && res.impact > 2.2) this._dustPuff(this.player.position, Math.min(1, res.impact / 6));
 
     // bob + stride so the walk reads as walking
-    const bob = Math.sin(this.walkPhase) * (moving ? 0.06 : 0);
-    const ground = heightAt(this.player.position.x, this.player.position.z, this._seed);
-    this.player.position.y = Math.max(ground, this.biome.waterLevel + 0.2) + 0.02;
+    const bob = Math.sin(this.walkPhase) * (moving && this.body.grounded ? 0.06 : 0);
+    this.player.position.y = this.body.y + 0.02;
     this.player.userData.parts.head.position.y = 1.62 + bob * 0.4;
     this.player.userData.parts.torso.rotation.z = Math.sin(this.walkPhase) * (moving ? 0.05 : 0);
 
@@ -801,6 +863,24 @@ export class PlanetScene {
     const lim = 150;
     this.player.position.x = clamp(this.player.position.x, -lim, lim);
     this.player.position.z = clamp(this.player.position.z, -lim, lim);
+  }
+
+  /** A ring of dust where you land hard — bigger on airless worlds where it hangs. */
+  _dustPuff(pos, strength = 0.6) {
+    const color = '#' + new THREE.Color(this.biome.ground?.[0] || '#999999').lerp(new THREE.Color('#ffffff'), 0.4).getHexString();
+    const puff = glowSprite(color, 2 + strength * 3, 0.55);
+    puff.position.copy(pos).add(V(0, 0.3, 0));
+    this.scene.add(puff);
+    const life = this.planet.isMoon ? 1.6 : 0.7;
+    const t0 = performance.now();
+    const tick = () => {
+      const k = (performance.now() - t0) / 1000 / life;
+      if (k >= 1 || !puff.parent) { puff.parent?.remove(puff); puff.material.dispose(); return; }
+      puff.scale.setScalar((2 + strength * 3) * (1 + k * 2.2));
+      puff.material.opacity = 0.55 * (1 - k);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   _updateFollowers(dt) {
@@ -895,7 +975,7 @@ export class PlanetScene {
     if (person) text = `Press <b>E</b> to talk to ${escapeHtml(person.userData.name)}`;
     else if (dep) text = `Press <b>R</b> to scan the ${escapeHtml(dep.userData.name.toLowerCase())}`;
     else if (isTouchScheme()) text = 'Drag to look · stick to walk · TALK and SCAN buttons';
-    else text = 'WASD to walk · drag to look · E talk · R scan · L lift off';
+    else text = 'WASD to walk · Space jump · drag to look · E talk · R scan · L lift off';
     node.innerHTML = text;
 
     const talkBtn = $('#ph-talk', this.ui);
@@ -923,6 +1003,10 @@ export class PlanetScene {
 
   /* ================================================================ teardown */
   exit() {
+    this.body = null;
+    this.hVel = null;
+    this.skyPlanet = null;
+    this._toldLowG = false;
     this._off.forEach((fn) => fn());
     this._off = [];
     this._bindings.forEach((off) => off());
