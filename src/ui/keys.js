@@ -57,6 +57,7 @@ export function zoomBy(controls, camera, f) {
 export const CONTROLS = {
   everywhere: [
     ['?  or  F1', 'This list of controls'],
+    ['F2', 'Talk to the ship\u2019s computer'],
     ['J / G / H / M', 'Earth · Galaxy map · Shipyard · Mission log'],
     ['U', 'Hide or show every panel'],
     ['[  /  ]', 'Open the left / right side panel'],
@@ -118,6 +119,7 @@ export const CONTROLS = {
   ],
   planet: [
     ['W A S D', 'Walk'],
+    ['Space', 'Jump — much higher on low-gravity moons'],
     ['Shift', 'Run'],
     ['E', 'Talk to someone nearby'],
     ['R', 'Scan a glowing deposit'],

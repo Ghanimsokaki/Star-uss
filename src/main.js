@@ -12,7 +12,7 @@ import { GalaxyScene } from './scenes/galaxy.js';
 import { SystemScene } from './scenes/system.js';
 import { PlanetScene } from './scenes/planet.js';
 import { buildTopbar, updateTopbar, setNavActive, toast, el, $, hasModal, closeModals } from './ui/dom.js';
-import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount, showControls } from './ui/menus.js';
+import { showCodex, showSettings, showHowTo, showMissionLog, showRankUp, showIntro, showDaily, showAccount, showControls, showComputer } from './ui/menus.js';
 import { cloudConfigured, initCloud, pushSave, pushScore, user as cloudUser } from './core/cloud.js';
 import { storage, clamp } from './core/util.js';
 import { device, watchDevice, setControlPreference, describeDevice } from './core/device.js';
@@ -235,6 +235,10 @@ class App {
         }
       }
       this.input.consumeAll();
+      // fade in from black so a scene swap reads as a cut, not a pop
+      let fade = document.getElementById('scene-fade');
+      if (!fade) { fade = document.createElement('div'); fade.id = 'scene-fade'; document.body.appendChild(fade); }
+      fade.classList.remove('go'); void fade.offsetWidth; fade.classList.add('go');
       const el2 = document.querySelector('.screen.active');
       if (el2) el2.classList.add('fade-in');
     } catch (err) {
@@ -302,6 +306,11 @@ class App {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
       if (e.key === 'Escape') {
         if (hasModal()) closeModals();
+      }
+      if (e.key === 'F2' && this.currentName !== 'title') {
+        e.preventDefault();
+        if (!hasModal()) showComputer(this);
+        return;
       }
       if ((e.key === '?' || e.key === 'F1') && this.currentName !== 'title') {
         e.preventDefault();

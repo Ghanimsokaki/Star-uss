@@ -66,3 +66,10 @@ test('keys: W/S thrust, Space/Shift lift, weapons moved off Space/Shift', () => 
   assert.match(src, /this\.keys\.has\('shift'\)\) lift -= 1/);
   assert.doesNotMatch(src, /k === ' '\) \{ this\._press\('fire'\)/);
 });
+
+test('no method in the flight scene is defined twice (a later one silently replaces the first)', () => {
+  const src = fs.readFileSync(new URL('../src/scenes/system.js', import.meta.url), 'utf8');
+  const names = [...src.matchAll(/^  (_?[A-Za-z]\w*)\([^)]*\) \{$/gm)].map((m) => m[1]);
+  const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+  assert.deepEqual(dupes, [], `duplicate methods: ${dupes.join(', ')}`);
+});
