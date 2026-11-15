@@ -815,8 +815,8 @@ export class PlanetScene {
 
     // --- physics: momentum on the ground, drift in the air, gravity of THIS world
     const gravity = Math.max(0.05, Number(this.planet.gravity) || 1);
-    const ground0 = Math.max(heightAt(this.player.position.x, this.player.position.z, this._seed), this.biome.waterLevel + 0.2);
-    if (!this.body) this.body = { y: ground0, vy: 0, grounded: true };
+    const groundAt = (x, z) => Math.max(heightAt(x, z, this._seed), this.biome.waterLevel + 0.2);
+    if (!this.body) this.body = { y: groundAt(this.player.position.x, this.player.position.z), vy: 0, grounded: true };
     if (!this.hVel) this.hVel = V();
     const want = V();
     if (moving) {
@@ -844,9 +844,10 @@ export class PlanetScene {
 
     const jump = this._jumpQueued || input.consume?.('jump');
     this._jumpQueued = false;
-    const groundNow = Math.max(heightAt(this.player.position.x, this.player.position.z, this._seed), this.biome.waterLevel + 0.2);
-    const res = stepVertical(this.body, groundNow, gravity, jump && this.body.grounded, dt);
-    if (jump && !this.body.grounded && this.body.vy > 0) {
+    const groundNow = groundAt(this.player.position.x, this.player.position.z);
+    const tookOff = jump && this.body.grounded;
+    const res = stepVertical(this.body, groundNow, gravity, tookOff, dt);
+    if (tookOff) {
       audio.ui();
       this.game.state.stats.jumps = (this.game.state.stats.jumps || 0) + 1;
       if (this.body.vy > 0 && jumpHeight(gravity) > 2 && !this._toldLowG) { this._toldLowG = true; toast(`Low gravity · ${gravity} g — you jump ${jumpHeight(gravity).toFixed(1)} m high!`, 'good', 2600); }

@@ -150,7 +150,9 @@ function makePlanets(system, rng) {
       tilt: rng.range(-0.5, 0.5),
       visualRadius: parseFloat(radius),
       moons: rng.int(0, 4),
-      gravity: +(type.habitability * rng.range(0.6, 1.25) + 0.2).toFixed(2),
+      // surface gravity grows with size (Earth: 6,371 km → 1 g); gas giants feel
+      // the most. Same rng call count as before, so the galaxy is unchanged.
+      gravity: +(Math.max(0.25, Math.min(2.6, (typeId === 'gas' ? 2.2 : 1) * (0.25 + 0.75 * (radius / 3.5))) * rng.range(0.9, 1.1))).toFixed(2),
       temperature: Math.round(rng.range(...(type.temp || [-210, 460]))),
       resources: {
         dilithium: Math.round(rng.range(4, 34) * (typeId === 'gas' ? 1.6 : 1)),

@@ -64,7 +64,9 @@ function textOf(res) {
   const c = res.message?.content;
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.map((x) => x.text || '').join('');
-  return String(res.text || res.toString?.() || '');
+  if (typeof res.text === 'string') return res.text;
+  const str = typeof res.toString === 'function' ? res.toString() : '';
+  return str && !str.startsWith('[object') ? str : '';
 }
 
 /**

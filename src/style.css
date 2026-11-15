@@ -1226,7 +1226,7 @@ body.below-decks .view-controls { display: none; }
   80% { transform: translate(2px, -1px); }
 }
 /* smooth cut between screens */
-#scene-fade { position: fixed; inset: 0; z-index: 85; background: #02040a; pointer-events: none; opacity: 0; }
+#scene-fade { position: fixed; inset: 0; z-index: 9; background: #02040a; pointer-events: none; opacity: 0; }
 #scene-fade.go { animation: sceneFade .55s ease-out forwards; }
 @keyframes sceneFade { 0% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .bfx-alert .ra-band { animation: none; } #scene-fade.go { animation: none; } }

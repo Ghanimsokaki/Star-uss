@@ -763,7 +763,7 @@ export class SystemScene {
     if (!this._labelsEl) return;
     const items = [];
     this.planetNodes.forEach((p, i) => {
-      items.push({ id: `p${i}`, kind: 'planet', text: p.data.name, sub: PT[p.data.type].short, node: p });
+      items.push({ id: `p${i}`, kind: 'planet', text: p.data.name, sub: PT[p.data.type].short, node: p, moon: !!p.moon });
     });
     this.anomalyNodes.forEach((a, i) => {
       if (!a.scanned) items.push({ id: `a${i}`, kind: 'anomaly', text: a.data.name, sub: 'Anomaly', node: a });
@@ -2393,7 +2393,8 @@ export class SystemScene {
       const wp = node.getWorldPosition(V());
       const dist = wp.distanceTo(p);
       if (l.kind === 'anomaly' && l.node.scanned) { l.el.style.display = 'none'; continue; }
-      if (dist > 1000) { l.el.style.display = 'none'; continue; }
+      // moons only label themselves when you are nearby, so planets stay readable
+      if (dist > (l.moon ? 300 : 1000)) { l.el.style.display = 'none'; continue; }
       const proj = wp.project(this.camera);
       if (proj.z > 1) { l.el.style.display = 'none'; continue; }
       l.el.style.display = 'flex';
