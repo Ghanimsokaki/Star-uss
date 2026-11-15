@@ -43,5 +43,15 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/love",
+      "destination": "/love.html"
+    },
+    {
+      "source": "/days-naswa",
+      "destination": "/love.html"
+    }
   ]
 }

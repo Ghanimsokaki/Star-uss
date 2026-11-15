@@ -52,8 +52,9 @@ export default defineConfig({
       input: {
         main: path.resolve(root, 'index.html'),
         viewer: path.resolve(root, 'viewer.html'),
+        love: path.resolve(root, 'love.html'),
       },
-      // two pages: the game, and the standalone hull viewer used while authoring
+      // pages: the game, the standalone hull viewer, and the Days & Naswa love story
       output: {
         manualChunks: {
           three: ['three'],
