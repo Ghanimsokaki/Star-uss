@@ -4,6 +4,7 @@ import { onModelLoaded, loadGLB } from '../art/imported.js';
 import { buildEnemy, shieldBubble } from '../art/enemies3d.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
+import { EarthGlobe, EARTH_RADIUS } from '../art/earth.js';
 import { glowTexture } from '../art/textures.js';
 import { el, $, $$, toast, modal, bar, fmtC, fmt } from '../ui/dom.js';
 import { fleetForSystem, makeEnemy } from '../data/enemies.js';
@@ -251,8 +252,17 @@ export class SystemScene {
       pivot.rotation.y = p.phase || i * 1.1;
       const node = new THREE.Group();
       node.position.x = orbitR;
-      const planet = makePlanet({ typeId: p.type, seed: p.seed, radius, quality: this.quality, name: p.name });
-      planet.rotation.z = p.tilt * 0.5;
+      // Sol III is the real Earth: NASA day/night maps, clouds, city lights, oceans
+      let planet, globe = null;
+      if (p.id === 'sol-p2') {
+        globe = new EarthGlobe(this.quality);
+        if (globe.grid) globe.grid.visible = false;
+        planet = globe.group;
+        planet.scale.setScalar(radius / EARTH_RADIUS);
+      } else {
+        planet = makePlanet({ typeId: p.type, seed: p.seed, radius, quality: this.quality, name: p.name });
+        planet.rotation.z = p.tilt * 0.5;
+      }
       node.add(planet);
       // surveyed marker ring
       if (g.isSurveyed(p.id)) {
@@ -262,7 +272,7 @@ export class SystemScene {
       }
       pivot.add(node);
       this.systemRoot.add(pivot);
-      this.planetNodes.push({ pivot, node, planet, data: p, orbitR, angle: p.phase || i * 1.1, speed: 0.006 / (1 + i * 0.4), radius });
+      this.planetNodes.push({ pivot, node, planet, data: p, orbitR, angle: p.phase || i * 1.1, speed: 0.006 / (1 + i * 0.4), radius, globe });
       // moons: orbit their planet, and can be landed on like any world
       (p.moonList || []).forEach((m, k) => {
         const mr = Math.max(4, m.visualRadius * 9);
@@ -2298,7 +2308,15 @@ export class SystemScene {
     for (const p of this.planetNodes) {
       p.angle += p.speed * dt;
       p.pivot.rotation.y = p.angle;
+      if (p.globe) {
+        // aim the real Earth's day side at this system's star (at the origin)
+        p.node.getWorldPosition(p.globe.sunDir).negate().normalize();
+        p.globe.update(dt, this.time);
+        continue;
+      }
       p.planet.rotation.y += dt * 0.05;
+      const atmo = p.planet.userData.atmo;
+      if (atmo) p.node.getWorldPosition(atmo.material.uniforms.uSunDir.value).negate().normalize();
       if (p.planet.userData.clouds) p.planet.userData.clouds.rotation.y += dt * 0.07;
       p.planet.getWorldPosition(new THREE.Vector3());
     }

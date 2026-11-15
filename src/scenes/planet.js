@@ -29,6 +29,7 @@ import { initDrawers } from '../ui/drawers.js';
 import { audio } from '../core/audio.js';
 import { isTouchScheme } from '../core/device.js';
 import { stepVertical, slopeLimited, jumpHeight, AIR_CONTROL } from '../core/walker.js';
+import { hasRealSky, makeRealSky, skyEnvironment, waterNormals } from '../art/realsky.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -170,8 +171,24 @@ export class PlanetScene {
 
     const moon = !!this.planet.isMoon;
     // moons have no air: a black sky, no haze, stars right down to the horizon
-    s.fog = moon ? null : new THREE.Fog(b.fog, 90, 460);
-    s.add(buildSky({ type: moon ? 'barren' : this.planet.type }));
+    const sunDir = V(-260, 180, -320).normalize();
+    const realSky = !moon && hasRealSky(this.planet.type);
+    const HAZE = { m: '#a9c6e2', ocean: '#a3c9e6', ice: '#d4e4f2', desert: '#d6b08a' };
+    s.fog = moon ? null : new THREE.Fog(realSky ? HAZE[this.planet.type] : b.fog, 110, realSky ? 620 : 460);
+    if (realSky) {
+      // a physically scattered sky, and the same sky lighting the whole scene
+      s.add(makeRealSky(this.planet.type, sunDir));
+      const r = this.app.viewport?.renderer;
+      if (this.app.viewport?.quality !== 'low' && r?.getRenderTarget) {
+        try {
+          this._envRT = skyEnvironment(r, this.planet.type, sunDir);
+          s.environment = this._envRT.texture;
+          s.environmentIntensity = 0.45;   // sky fill light; the sun does the real work
+        } catch (e) { console.warn('[sky] environment bake failed', e); }
+      }
+    } else {
+      s.add(buildSky({ type: moon ? 'barren' : this.planet.type }));
+    }
     s.add(makeStars(moon ? 2400 : 1200, 3800));
     if (moon && this.parentPlanet) {
       // the world this moon orbits, hanging huge over the horizon
@@ -189,10 +206,26 @@ export class PlanetScene {
     const sunGlow = glowSprite('#' + new THREE.Color(b.sun).getHexString(), 320, 0.55);
     sunGlow.position.copy(sunPos).normalize().multiplyScalar(1200);
     s.add(sunGlow);
-    const sun = new THREE.DirectionalLight(b.sun, 2.6);
+    const sun = new THREE.DirectionalLight(b.sun, realSky ? 3.0 : 2.6);
     sun.position.copy(sunPos);
     s.add(sun);
-    s.add(new THREE.HemisphereLight(b.skyBottom, b.ground[0], 0.85));
+    s.add(sun.target);
+    this.sun = sun;
+    this._sunOffset = sunPos.clone().normalize().multiplyScalar(120);
+    // soft sun shadows, kept to a box around the away team
+    this._shadows = this.app.viewport?.quality !== 'low' && !!this.app.viewport?.renderer?.shadowMap;
+    if (this._shadows) {
+      sun.castShadow = true;
+      const hi = this.app.viewport.quality === 'high';
+      sun.shadow.mapSize.set(hi ? 2048 : 1024, hi ? 2048 : 1024);
+      const c = sun.shadow.camera;
+      c.left = -45; c.right = 45; c.top = 45; c.bottom = -45; c.near = 10; c.far = 320;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.04;
+      this.app.viewport.renderer.shadowMap.enabled = true;
+      this.app.viewport.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+    s.add(new THREE.HemisphereLight(b.skyBottom, b.ground[0], realSky && this._envRT ? 0.35 : (moon ? 0.25 : 0.85)));
     const rim = new THREE.DirectionalLight(b.water, 0.5);
     rim.position.set(180, 60, 220);
     s.add(rim);
@@ -202,14 +235,22 @@ export class PlanetScene {
     s.add(this.terrain);
 
     // water, for the worlds that have any
-    if (b.waterLevel > -2.5) {
+    // no liquid water on airless worlds (moons, bare rock)
+    const airless = this.planet.isMoon || ['barren', 'rogue'].includes(this.planet.type);
+    if (b.waterLevel > -2.5 && !airless) {
+      // glossy water with rolling waves; it reflects the sky environment
+      const normals = waterNormals();
+      normals.repeat.set(90, 90);
       const water = new THREE.Mesh(
-        new THREE.CircleGeometry(900, 48),
-        new THREE.MeshStandardMaterial({
-          color: b.water, transparent: true, opacity: 0.82,
-          roughness: 0.12, metalness: 0.35,
+        new THREE.CircleGeometry(900, 64),
+        new THREE.MeshPhysicalMaterial({
+          color: b.water, transparent: true, opacity: 0.88,
+          roughness: 0.05, metalness: 0.0, envMapIntensity: 1.4,
+          normalMap: normals, normalScale: new THREE.Vector2(0.45, 0.45),
+          clearcoat: 1, clearcoatRoughness: 0.08, ior: 1.33,
         }),
       );
+      water.receiveShadow = this._shadows;
       water.rotation.x = -Math.PI / 2;
       water.position.y = b.waterLevel;
       water.name = 'water';
@@ -227,6 +268,14 @@ export class PlanetScene {
     this._buildShip();
     this._buildAwayTeam();
     this._buildPeople();
+    if (this._shadows) {
+      this.terrain.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+      s.traverse((o) => {
+        if (!o.isMesh || o === this.water || o.material?.transparent || o.material?.isShaderMaterial) return;
+        if (o.isInstancedMesh || o.parent === s || o.parent?.parent === s || o.parent?.parent?.parent === s) o.castShadow = true;
+        o.receiveShadow = true;
+      });
+    }
     this._buildDeposits();
 
     // drifting motes: dust, snow or spores depending on the world
@@ -239,13 +288,21 @@ export class PlanetScene {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(12.6, 16.2, 72),
       new THREE.MeshStandardMaterial({
-        color: 0x3d4b5b, roughness: 0.55, metalness: 0.6,
-        emissive: 0x59e0ff, emissiveIntensity: 0.12, side: THREE.DoubleSide,
+        // painted deck plate: matte, and not glowing (a lit apron washed whole moons cyan)
+        color: 0x4a5462, roughness: 0.8, metalness: 0.15, side: THREE.DoubleSide,
       }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.04;
     pad.add(ring);
+    // a thin landing-light line on the inner edge, like runway lights
+    const edge = new THREE.Mesh(
+      new THREE.RingGeometry(12.6, 12.78, 96),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x59e0ff).multiplyScalar(1.2), toneMapped: false, side: THREE.DoubleSide }),
+    );
+    edge.rotation.x = -Math.PI / 2;
+    edge.position.y = 0.05;
+    pad.add(edge);
 
     // landing marks
     for (let i = 0; i < 6; i++) {
@@ -786,6 +843,15 @@ export class PlanetScene {
 
     this._moveAwayTeam(dt);
     if (this.skyPlanet) this.skyPlanet.rotation.y += dt * 0.01;
+    // keep the shadow box centred on the away team
+    if (this.sun && this._shadows && this.player) {
+      this.sun.position.copy(this.player.position).add(this._sunOffset);
+      this.sun.target.position.copy(this.player.position);
+    }
+    if (this.water?.material.normalMap) {
+      const n = this.water.material.normalMap.offset;
+      n.x = (n.x + dt * 0.004) % 1; n.y = (n.y + dt * 0.0025) % 1;
+    }
     this._updateFollowers(dt);
     this._updatePeople(dt);
     this._updateDeposits(dt);
@@ -1004,6 +1070,11 @@ export class PlanetScene {
 
   /* ================================================================ teardown */
   exit() {
+    if (this.app.viewport?.renderer?.shadowMap) this.app.viewport.renderer.shadowMap.enabled = false;
+    if (this.scene) { this.scene.environment = null; this.scene.environmentIntensity = 1; }
+    this._envRT?.dispose();
+    this._envRT = null;
+    this.sun = null;
     this.body = null;
     this.hVel = null;
     this.skyPlanet = null;
