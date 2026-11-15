@@ -29,6 +29,8 @@ export class HeartFx {
     this.meteors = [];
     this.nextFloat = 2;
     this.nextMeteor = 4;
+    this.ambient = false; // hearts drifting up on their own
+    this.night = false; // shooting stars only once it is dark
     this.resize();
   }
 
@@ -100,12 +102,14 @@ export class HeartFx {
     ctx.clearRect(0, 0, this.w, this.h);
 
     if (started) {
-      this.nextFloat -= dt;
-      if (this.nextFloat <= 0) {
-        this.float();
-        this.nextFloat = this.reduced ? 3 : 0.9 + Math.random() * 1.2;
+      if (this.ambient) {
+        this.nextFloat -= dt;
+        if (this.nextFloat <= 0) {
+          this.float();
+          this.nextFloat = this.reduced ? 3 : 1.4 + Math.random() * 1.6;
+        }
       }
-      if (!this.reduced) {
+      if (!this.reduced && this.night) {
         this.nextMeteor -= dt;
         if (this.nextMeteor <= 0) {
           this.meteor();

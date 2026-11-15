@@ -54,7 +54,7 @@ export default defineConfig({
         viewer: path.resolve(root, 'viewer.html'),
         love: path.resolve(root, 'love.html'),
       },
-      // pages: the game, the standalone hull viewer, and the Days & Naswa love story
+      // pages: the game, the standalone hull viewer, and the Dyas & Naswa anime love story
       output: {
         manualChunks: {
           three: ['three'],
