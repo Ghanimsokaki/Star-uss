@@ -1106,3 +1106,63 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input:focus-vis
 }
 
 .warp-bar .wb-sub b { white-space: nowrap; }
+
+/* ---------- damage report ---------- */
+.damage-panel { border-color: rgba(255,90,74,.45); background: rgba(30,8,10,.72); pointer-events: auto; }
+.damage-panel .dp-list { display: flex; flex-direction: column; gap: 7px; margin: 7px 0 8px; }
+.damage-panel .dp-row b { font-size: 11px; letter-spacing: .04em; }
+.damage-panel .dp-row span { font-family: var(--font-h); font-size: 10px; color: var(--amber); }
+.damage-panel .dp-row.off span { color: var(--red); }
+.damage-panel .dp-row small { display: block; font-size: 9.5px; color: var(--ink-faint); margin-top: 3px; line-height: 1.3; }
+.damage-panel .dp-row.off b { color: #ffb4ad; animation: dpBlink 1.1s steps(2) infinite; }
+@keyframes dpBlink { 50% { opacity: .55; } }
+.is-mobile .hud-top .damage-panel { display: block; }
+.is-mobile .hud-top .damage-panel[hidden] { display: none; }
+.is-mobile .damage-panel small { display: none; }
+
+/* ---------- below decks ---------- */
+.interior-hud { display: none; }
+.below-decks .interior-hud { display: block; position: absolute; inset: 0; pointer-events: none; }
+/* while inside, the flight HUD steps aside — only the damage report stays */
+.below-decks .hud > :not(.hud-top):not(.interior-hud):not(.globe-labels):not(.lift-pad) { display: none !important; }
+.below-decks .hud-top > :not(.damage-panel) { display: none !important; }
+.below-decks .globe-labels { display: none; }
+.below-decks #below-btn { display: none; }
+.ih-top { position: absolute; top: calc(74px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: center; pointer-events: auto; }
+.ih-room { font-family: var(--font-h); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--amber);
+  padding: 8px 14px; border-radius: 999px; background: rgba(6,12,22,.78); border: 1px solid var(--line-amber); }
+.ih-map { position: absolute; right: calc(14px + var(--safe-r)); top: calc(74px + var(--safe-t)); width: 120px; height: 180px;
+  border-radius: 12px; background: rgba(6,12,22,.72); border: 1px solid var(--line); }
+.ih-prompt { position: absolute; left: 50%; bottom: calc(110px + var(--safe-b)); transform: translateX(-50%);
+  padding: 10px 18px; border-radius: 999px; background: rgba(6,12,22,.88); border: 1px solid rgba(255,179,71,.5);
+  font-size: 13px; letter-spacing: .06em; color: #ffe6c0; white-space: nowrap; }
+.ih-cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,.7); }
+#ih-repair { position: absolute; right: calc(24px + var(--safe-r)); bottom: calc(30px + var(--safe-b)); pointer-events: auto;
+  width: 84px; height: 84px; border-color: var(--amber); }
+.below-decks .hud .stick-zone { display: none !important; }
+.touch-mode.below-decks .lift-pad, .touch-mode .below-decks .lift-pad { display: grid; }
+body.below-decks .view-controls { display: none; }
+.keys-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.keys-table td { padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.05); color: var(--ink-dim); vertical-align: top; }
+.keys-table td:first-child { width: 44%; white-space: nowrap; }
+.keys-table kbd { font-family: var(--font-h); font-size: 10.5px; letter-spacing: .04em; color: var(--ink);
+  background: rgba(20,40,62,.72); border: 1px solid rgba(140,200,240,.42); border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; }
+
+/* phones: the damage report always shows when something is broken */
+.is-mobile .hud-top .damage-panel:not([hidden]) { display: block !important; }
+.is-mobile .damage-panel .dp-row:nth-child(n+3) { display: none; }   /* top two jobs only */
+/* below decks on a phone: W/S pads to walk (no up/down inside), compact HUD */
+.below-decks .lift-pad [data-action="up"], .below-decks .lift-pad [data-action="down"] { visibility: hidden; }
+.ih-room, #ih-back { white-space: nowrap; }
+.is-mobile .ih-room { font-size: 9.5px; padding: 6px 10px; letter-spacing: .12em; }
+.is-mobile #ih-back { font-size: 9px; padding: 4px 8px; min-height: 30px; }
+.is-mobile .ih-top { top: calc(58px + var(--safe-t)); max-width: 70vw; }
+.is-mobile .ih-map { width: 74px; height: 111px; top: calc(58px + var(--safe-t)); }
+.is-mobile #ih-repair { width: 72px; height: 72px; bottom: calc(18px + var(--safe-b)); }
+.is-mobile .ih-prompt { font-size: 11px; bottom: calc(100px + var(--safe-b)); }
+/* phones steer by dragging the left half of the screen; the joystick graphic
+   only got in the way of the damage report */
+.is-mobile .stick-zone { display: none !important; }
+.damage-panel .row.between > span { white-space: nowrap; }
+.is-mobile .damage-panel .row.between > .faint { display: none; }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { initDrawers } from '../ui/drawers.js';
+import { bindKeys, orbitBy } from '../ui/keys.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EarthGlobe, vec3ToLatLon, latLonToVec3, EARTH_RADIUS } from '../art/earth.js';
 import { makeSky, makeStars, glowSprite } from '../art/environment.js';
@@ -88,6 +89,8 @@ export class EarthScene {
   }
 
   exit() {
+    this._unkeys?.();
+    this._unkeys = null;
     this.globe.removeGhost();
     this._bindings.forEach((off) => off());
     this._bindings = [];
@@ -175,6 +178,7 @@ export class EarthScene {
     };
     $('#tool-rotate', this.ui).classList.toggle('active', this.controls.autoRotate);
     this._bindGlobeTools();
+    this._bindEarthKeys();
 
     this._refreshPanels();
     this._bindGlobeInput();
@@ -240,6 +244,42 @@ export class EarthScene {
     $('#tool-zoomin', ui).onclick = () => this._zoom(0.8);
     $('#tool-zoomout', ui).onclick = () => this._zoom(1.25);
     this._syncGlobeExtras();
+  }
+
+  /** Keyboard: build, place, spin, zoom, hop districts — no mouse needed. */
+  _bindEarthKeys() {
+    const spin = (dt, dp) => { this.controls.autoRotate = false; $('#tool-rotate', this.ui)?.classList.remove('active'); orbitBy(this.controls, this.camera, dt, dp); };
+    const pick = (i) => {
+      const cards = $$('[data-build]', this.ui);
+      const card = cards[i];
+      if (!card) return;
+      if (card.disabled) { toast(`${DISTRICTS[card.dataset.build]?.name || 'District'}: not available yet`, 'warn'); return; }
+      card.click();
+      if (this.buildType) toast(`${DISTRICTS[this.buildType].name}: aim with the arrows, Enter to build, Esc to cancel`, 'good', 2600);
+    };
+    const map = {
+      arrowleft: () => spin(0.12, 0), a: () => spin(0.12, 0),
+      arrowright: () => spin(-0.12, 0), d: () => spin(-0.12, 0),
+      arrowup: () => spin(0, -0.1), w: () => spin(0, -0.1),
+      arrowdown: () => spin(0, 0.1), s: () => spin(0, 0.1),
+      '+': () => this._zoom(0.85), '=': () => this._zoom(0.85), '-': () => this._zoom(1.18),
+      n: () => this._flyToNextDistrict(),
+      r: () => $('#tool-rotate', this.ui)?.click(),
+      y: () => $('#tool-layers', this.ui)?.click(),
+      l: () => this._launch(),
+      '[': () => this.drawers?.toggle('left'), ']': () => this.drawers?.toggle('right'),
+      enter: () => {
+        if (!this.buildType) return false;
+        // build where the middle of the screen meets the globe
+        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+        const p = this.globe.pickSurface(this.raycaster);
+        if (!p) { toast('Point the centre of the screen at the globe', 'warn'); return; }
+        const ll = this.globe.worldToLatLon(p);
+        this._placeDistrict(ll.lat, ll.lon);
+      },
+    };
+    for (let i = 0; i < 9; i++) map[String(i + 1)] = () => pick(i);
+    this._unkeys = bindKeys(map);
   }
 
   _liveHour() { const d = new Date(); return d.getHours() + d.getMinutes() / 60; }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const cache = new Map();
 const S = (n) => Math.round((value) => value * n);
 
-function canvas(w, h) {
+export function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   return c;
