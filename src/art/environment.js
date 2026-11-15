@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { nebulaTexture, environmentTexture, starSpriteTexture, glowTexture, planetTexture, cloudTexture, ringTexture, starfield } from './textures.js';
 import { disposeObject3D } from './ships3d.js';
 import { device } from '../core/device.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 
 let envMap = null;
 export function getEnvironment(renderer) {
@@ -94,6 +95,22 @@ export function makeStars(count = 2600, radius = 30000) {
   return p;
 }
 
+/**
+ * A camera lens flare: the bright source plus ghost rings along the line
+ * through the screen centre, the way real lenses bounce strong light.
+ */
+export function addLensFlare(light, color = '#ffd9a0') {
+  const flare = new Lensflare();
+  const c = new THREE.Color(color);
+  flare.addElement(new LensflareElement(glowTexture('#ffffff'), 520, 0, c));
+  const ring = glowTexture('#9fc8ff');
+  for (const [size, dist, tint] of [[60, 0.35, '#a8d0ff'], [110, 0.55, '#ffd0a0'], [70, 0.75, '#c0a8ff'], [150, 1.0, '#8fd6ff']]) {
+    flare.addElement(new LensflareElement(ring, size, dist, new THREE.Color(tint).multiplyScalar(0.35)));
+  }
+  light.add(flare);
+  return flare;
+}
+
 export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, light = true } = {}) {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
@@ -123,6 +140,8 @@ export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, ligh
     const l = new THREE.PointLight(new THREE.Color(color), intensity * 0.62, 0, 0);
     l.position.set(0, 0, 0);
     g.add(l);
+    // the camera's view of a star: lens flare (skipped on low-end devices)
+    if (device.tier !== 'low') g.userData.flare = addLensFlare(l, color);
   }
   g.userData.core = core;
   g.userData.halo = halo;
@@ -164,19 +183,37 @@ export function makePlanet({ typeId = 'm', seed = 1, radius = 20, quality = 1, n
     g.add(clouds);
     g.userData.clouds = clouds;
   }
-  // atmosphere rim
-  if (['m', 'ocean', 'ice', 'toxic', 'gas'].includes(typeId)) {
-    const atmoColor = { m: '#6fb5ff', ocean: '#78d0ff', ice: '#bfe9ff', toxic: '#c8e05a', gas: '#ffcf9a' }[typeId];
+  // atmosphere: thin shell that scatters sunlight — bright on the day side,
+  // reddened where the sun is setting (the terminator), nearly gone at night.
+  // uSunDir is world-space, planet → star; scenes update it every frame.
+  if (['m', 'ocean', 'ice', 'toxic', 'gas', 'desert', 'volcanic'].includes(typeId)) {
+    const atmoColor = { m: '#6fb5ff', ocean: '#78d0ff', ice: '#bfe9ff', toxic: '#c8e05a', gas: '#ffcf9a', desert: '#ffc59a', volcanic: '#ff8a5a' }[typeId];
+    const thick = { desert: 0.45, volcanic: 0.6 }[typeId] ?? 1;
     const atmo = new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.055, 48, 32),
       new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(atmoColor) } },
-        vertexShader: `varying vec3 vN; varying vec3 vP;
-          void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0);
-          vP = mv.xyz; gl_Position = projectionMatrix * mv; }`,
-        fragmentShader: `uniform vec3 uColor; varying vec3 vN; varying vec3 vP;
-          void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(-vP))), 3.0);
-          gl_FragColor = vec4(uColor * f * 1.6, f * 0.9); }`,
+        uniforms: {
+          uColor: { value: new THREE.Color(atmoColor) },
+          uSunset: { value: new THREE.Color('#ff7a3a') },
+          uSunDir: { value: new THREE.Vector3(1, 0.2, 0.3).normalize() },
+          uThick: { value: thick },
+        },
+        vertexShader: `varying vec3 vN; varying vec3 vW;
+          void main(){ vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position,1.0);
+          vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `uniform vec3 uColor; uniform vec3 uSunset; uniform vec3 uSunDir; uniform float uThick;
+          varying vec3 vN; varying vec3 vW;
+          void main(){
+            vec3 N = normalize(vN); vec3 V = normalize(cameraPosition - vW); vec3 L = normalize(uSunDir);
+            float rim = pow(1.0 - abs(dot(N, V)), 2.6);
+            float sun = dot(N, L);
+            float day = smoothstep(-0.25, 0.35, sun);
+            float dusk = exp(-pow(sun * 4.0, 2.0));               // peaks right on the terminator
+            float forward = pow(max(dot(-V, L), 0.0), 6.0);       // glow when looking toward the sun through the limb
+            vec3 col = mix(uSunset, uColor, smoothstep(-0.05, 0.3, sun)) * (day * 1.5 + dusk * 0.9 + forward * 1.2);
+            float a = rim * (0.05 + day * 0.95 + dusk * 0.6) * uThick;
+            gl_FragColor = vec4(col * a, a);
+          }`,
         transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
       })
     );
