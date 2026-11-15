@@ -130,3 +130,9 @@ official download before re-encoding.
 **NASA 3D Resources** (<https://github.com/nasa/NASA-3D-Resources>). NASA imagery and
 models are generally not subject to copyright in the United States; NASA does not
 endorse this project.
+
+## Hubble and Voyager models
+
+`public/assets/nasa/hubble.glb` (*Hubble Space Telescope (A)*) and
+`public/assets/nasa/voyager.glb` (*Voyager Probe (A)*) are also from **NASA 3D Resources**
+(<https://github.com/nasa/NASA-3D-Resources>), verified by SHA-256 against the source.

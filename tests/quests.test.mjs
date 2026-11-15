@@ -105,3 +105,19 @@ test('designing a ship: stats, price, commission and reload', async () => {
   registerCustomClass(null);
   assert.equal(SHIP_CLASSES.custom, undefined);
 });
+
+test('designer parts: styles are validated and each one trades stats', async () => {
+  const { DEFAULT_DESIGN, sanitizeDesign, statsForDesign } = await import('../src/data/designer.js');
+  const bad = sanitizeDesign({ nacelleStyle: 'banana', pylonStyle: 1, hullShape: null, rollbar: 'yes', deflector: 'javascript:x' });
+  assert.equal(bad.nacelleStyle, 'classic');
+  assert.equal(bad.pylonStyle, 'straight');
+  assert.equal(bad.hullShape, 'round');
+  assert.equal(bad.rollbar, false);
+  assert.equal(bad.deflector, DEFAULT_DESIGN.deflector);
+  const base = statsForDesign(DEFAULT_DESIGN);
+  assert.ok(statsForDesign({ ...DEFAULT_DESIGN, nacelleStyle: 'sleek' }).speed > base.speed, 'sleek is faster');
+  assert.ok(statsForDesign({ ...DEFAULT_DESIGN, nacelleStyle: 'boxy' }).hull > base.hull, 'boxy is tougher');
+  const bar = statsForDesign({ ...DEFAULT_DESIGN, rollbar: true });
+  assert.ok(bar.torp > base.torp && bar.turn <= base.turn, 'roll bar: more guns, less agile');
+  assert.ok(statsForDesign({ ...DEFAULT_DESIGN, pylonStyle: 'swept' }).turn > base.turn, 'swept pylons turn better');
+});

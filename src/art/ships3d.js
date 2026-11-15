@@ -308,6 +308,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   const glass = new THREE.MeshStandardMaterial({
     color: 0x0a1420, metalness: 0.6, roughness: 0.06, envMapIntensity: 1.8,
   });
+  const impulse = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff4a24').multiplyScalar(1.5), toneMapped: false, side: THREE.DoubleSide });
   const bussard = new THREE.MeshStandardMaterial({
     color: new THREE.Color('#ff6a3a'),
     emissive: new THREE.Color('#e8361a'), emissiveIntensity: 1.35,
@@ -322,7 +323,7 @@ export function makeShipMaterials(cls, record, quality = 1) {
   });
   // lit portholes: warm cabin light, slightly over-bright so bloom picks it up
   const windows = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe3b0').multiplyScalar(0.85), toneMapped: false });
-  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, bussard, decal, emblem, windows, palette, nacelleColor, deflectorColor };
+  return { hull, trim, dark, accent, glow, glowSoft, deflector, deflectorGlass, glass, bussard, impulse, decal, emblem, windows, palette, nacelleColor, deflectorColor };
 }
 
 /* ============================================================ builder */
@@ -358,11 +359,14 @@ class ShipBuilder {
     const geo = saucerGeometry(r, t, { segments: this.detail ? segments : Math.round(segments * 0.6), scaleZ });
     const s = new THREE.Mesh(geo, this.mats.hull);
     g.add(s);
+    // round details (rim ring, phaser strips, window decks) only suit a round
+    // saucer; a faceted one (the designer's hex) would have them float off the flats
+    const round = segments > 12;
     // rim highlight ring
     const rim = new THREE.Mesh(new THREE.TorusGeometry(r * 0.995, t * 0.18, 6, this.detail ? 72 : 40), this.mats.trim);
     rim.rotation.x = Math.PI / 2;
     rim.scale.z = scaleZ;
-    g.add(rim);
+    if (round) g.add(rim);
     // top superstructure
     const top = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.36, r * 0.42, t * 0.55, this.detail ? 40 : 24), this.mats.hull);
     top.position.y = t * 0.9;
@@ -377,7 +381,7 @@ class ShipBuilder {
     g.add(dome);
     // phaser strips around rim
     const stripCount = this.cls.hardpoints?.phasers || 4;
-    for (let i = 0; i < Math.min(6, stripCount); i++) {
+    for (let i = 0; i < (round ? Math.min(6, stripCount) : 0); i++) {
       const a = -0.6 + i * (1.2 / Math.max(1, Math.min(6, stripCount) - 1));
       const strip = new THREE.Mesh(new THREE.TorusGeometry(r * 0.86, t * 0.09, 4, 18, 0.3), this.mats.accent);
       strip.rotation.x = Math.PI / 2;
@@ -391,8 +395,29 @@ class ShipBuilder {
     lowerDeck.rotation.x = Math.PI / 2;
     lowerDeck.position.y = -t * 0.35;
     lowerDeck.scale.z = scaleZ;
-    g.add(lowerDeck);
-    this.saucerWindows(g, r, t, scaleZ);
+    if (round) { g.add(lowerDeck); this.saucerWindows(g, r, t, scaleZ); }
+    if (this.detail) {
+      // escape-pod hatches: two rings of small dark plates on the dorsal surface
+      for (const [rr, n] of [[0.62, Math.round(r * 16)], [0.8, Math.round(r * 22)]]) {
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + rr;
+          const R = r * rr;
+          // the top surface height at this radius (see saucerGeometry)
+          const yy = t * 0.95 * (1 - Math.pow(rr, 2.4)) + t * 0.06 * rr + 0.004;
+          const pod = new THREE.Mesh(new THREE.BoxGeometry(r * 0.045, t * 0.05, r * 0.03), this.mats.dark);
+          pod.position.set(Math.sin(a) * R, yy, Math.cos(a) * R * scaleZ);
+          pod.rotation.y = a;
+          g.add(pod);
+        }
+      }
+      // ventral sensor dome, glowing at the tip
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), this.mats.trim);
+      dome.position.y = -t * 0.42;
+      g.add(dome);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.035, 10, 6), this.mats.accent);
+      tip.position.y = -t * 0.42 - r * 0.12;
+      g.add(tip);
+    }
     this.group.add(g);
     return g;
   }
@@ -404,6 +429,15 @@ class ShipBuilder {
     m.scale.set(scaleX, scaleY, 1);
     this.group.add(m);
     if (windows) this.hullWindows({ len, r, y, z, front, back, scaleX, scaleY });
+    if (this.detail && r > 0.3 && len > 1.2) {
+      // dorsal ridge and a keel line give the secondary hull a spine
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(r * 0.16, r * 0.1, len * 0.55), this.mats.trim);
+      ridge.position.set(0, y + latheRadius(0.5, r, { front, back }) * scaleY * 0.98, z - len * 0.02);
+      this.group.add(ridge);
+      const keel = new THREE.Mesh(new THREE.BoxGeometry(r * 0.1, r * 0.08, len * 0.45), this.mats.dark);
+      keel.position.set(0, y - latheRadius(0.5, r, { front, back }) * scaleY * 0.98, z);
+      this.group.add(keel);
+    }
     return m;
   }
 
@@ -492,7 +526,7 @@ class ShipBuilder {
     return g;
   }
 
-  nacelle({ x, y, z, len, r, tier = 0, tilt = 0, rudder = 0, group = null }) {
+  nacelle({ x, y, z, len, r, tier = 0, tilt = 0, rudder = 0, group = null, style = 'classic' }) {
     const parent = group || this.group;
     const pivot = new THREE.Group();
     pivot.position.set(x, y, z);
@@ -500,7 +534,11 @@ class ShipBuilder {
     pivot.rotation.y = rudder;
     parent.add(pivot);
 
-    const body = new THREE.Mesh(bodyLathe(len, r, { segments: this.detail ? 32 : 18, front: 0.66, back: 0.58 }), this.mats.hull);
+    // styles: classic (rounded), sleek (tapered, pointed), boxy (flat-sided)
+    const body = style === 'boxy'
+      ? new THREE.Mesh(roundedBox(r * 1.9, r * 1.7, len * 0.98, r * 0.35), this.mats.hull)
+      : new THREE.Mesh(bodyLathe(len, style === 'sleek' ? r * 0.88 : r, { segments: this.detail ? 32 : 18, front: style === 'sleek' ? 0.28 : 0.66, back: style === 'sleek' ? 0.32 : 0.58 }), this.mats.hull);
+    if (style === 'boxy') body.position.y = -r * 0.85;   // roundedBox is built upward from y=0
     pivot.add(body);
 
     // bussard collector at front (+Z)
@@ -531,6 +569,27 @@ class ShipBuilder {
     tailGlow.position.z = -len * 0.52;
     pivot.add(tailGlow);
 
+    // warp coils: a segmented glowing strip on the INBOARD face (the outer face
+    // already has the grille), lit cells separated by dark coil housings
+    if (this.detail) {
+      const inboard = -Math.sign(x || 1);
+      const coils = Math.max(5, Math.round(len * 3.2));
+      const span = len * 0.6;
+      for (let i = 0; i < coils; i++) {
+        const z = -len * 0.34 + (i + 0.5) * (span / coils);
+        const cell = new THREE.Mesh(new THREE.BoxGeometry(r * 0.12, r * 0.5, (span / coils) * 0.72), this.mats.glow);
+        cell.position.set(inboard * r * 0.93, 0, z);
+        pivot.add(cell);
+      }
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(r * 0.08, r * 0.66, span * 1.03), this.mats.dark);
+      housing.position.set(inboard * r * 0.9, 0, -len * 0.34 + span / 2);
+      pivot.add(housing);
+      // dorsal spine along the top of the nacelle
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(r * 0.22, r * 0.12, len * 0.7), this.mats.trim);
+      spine.position.set(0, r * 0.97, -len * 0.05);
+      pivot.add(spine);
+    }
+
     // ribs for detail
     if (this.detail) {
       for (let i = 0; i < 4; i++) {
@@ -560,7 +619,8 @@ class ShipBuilder {
       const engine = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.28), this.mats.trim);
       engine.position.set(x, y, z);
       this.group.add(engine);
-      const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.11), this.mats.glow);
+      // Starfleet impulse drives glow red-orange (warp is blue)
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.11), this.mats.impulse);
       glow.position.set(x, y, z - 0.15);
       glow.rotation.y = Math.PI;
       this.group.add(glow);
@@ -1255,9 +1315,9 @@ function buildCustom(b) {
   const scaleZ = d.shape === 'oval' ? 1.3 : d.shape === 'arrow' ? 1.38 : 1;
   const sy = 0.7;
   const sz = R * scaleZ * 0.55;
-  b.saucer({ r: R, t: 0.13 + R * 0.05, y: sy, z: sz, scaleZ });
+  b.saucer({ r: R, t: 0.13 + R * 0.05, y: sy, z: sz, scaleZ, segments: d.shape === 'hex' ? 6 : 64 });
   if (d.shape === 'arrow') {
-    // a swept bow: two angled plates meeting ahead of the saucer
+    // a swept bow: a flattened wedge ahead of the saucer
     const bow = b.mesh(new THREE.ConeGeometry(R * 0.55, R * 1.1, 3, 1), m.hull, [0, sy - 0.02, sz + R * scaleZ * 0.95], [Math.PI / 2, 0, 0]);
     bow.scale.set(1, 1, 0.22);
   }
@@ -1266,7 +1326,12 @@ function buildCustom(b) {
   const hullY = sy - 0.62;
   if (L > 0.3) {
     const r = 0.26 + R * 0.12;
-    b.hullBody({ len: L, r, y: hullY, z: hullZ, front: 0.45, back: 0.65, scaleY: 0.9 });
+    if (d.hullShape === 'boxy') {
+      const box = b.mesh(roundedBox(r * 2.2, r * 1.7, L, r * 0.3), m.hull, [0, hullY - r * 0.85, hullZ]);
+      void box;
+    } else {
+      b.hullBody({ len: L, r, y: hullY, z: hullZ, front: 0.45, back: 0.65, scaleY: 0.9 });
+    }
     b.deflector({ r: r * 0.7, y: hullY, z: hullZ + L * 0.5 - 0.02 });
     if (d.neck !== false) {
       b.pylon([[-0.14, 0], [0.14, 0], [0.22, 0.6], [-0.22, 0.6]], Math.min(0.9, L * 0.3), m.hull, [0, hullY + 0.1, sz - R * 0.35], [0, 0, 0]);
@@ -1287,9 +1352,26 @@ function buildCustom(b) {
   const rows = d.nacelles === 4 ? [ny + 0.45, ny - 0.45] : [ny];
   for (const y of rows) {
     for (const side of [-1, 1]) {
-      b.nacelle({ x: side * span, y, z: nz, len: nl, r: 0.17 + nl * 0.012, tilt: side * 0.02 });
-      strut(b, [side * 0.15, anchorY, anchorZ], [side * span, y, nz - nl * 0.1], 0.07, m.hull);
+      b.nacelle({ x: side * span, y, z: nz, len: nl, r: 0.17 + nl * 0.012, tilt: side * 0.02, style: d.nacelleStyle || 'classic' });
+      if (d.pylonStyle === 'swept') {
+        // swept-back pylons: rooted further forward, raked aft to the nacelle
+        strut(b, [side * 0.15, anchorY, anchorZ + 0.6], [side * span, y, nz - nl * 0.25], 0.07, m.hull);
+      } else {
+        strut(b, [side * 0.15, anchorY, anchorZ], [side * span, y, nz - nl * 0.1], 0.07, m.hull);
+      }
     }
+  }
+  if (d.rollbar) {
+    // a Miranda-style weapons pod on a bar across the back of the saucer
+    const barY = sy + 0.42;
+    const barZ = sz - R * scaleZ * 0.55;
+    b.mesh(roundedBox(span * 2 + 0.2, 0.08, 0.32, 0.04), m.hull, [0, barY, barZ]);
+    b.mesh(roundedBox(0.9, 0.16, 0.4, 0.06), m.trim, [0, barY + 0.08, barZ]);
+    strut(b, [-0.3, sy + 0.1, barZ], [-0.3, barY, barZ], 0.06, m.hull);
+    strut(b, [0.3, sy + 0.1, barZ], [0.3, barY, barZ], 0.06, m.hull);
+    b.torpTube(-0.2, barY + 0.1, barZ + 0.22);
+    b.torpTube(0.2, barY + 0.1, barZ + 0.22);
+    b.phaserBank(0, barY + 0.17, barZ, [0, 0, 0], 0.8);
   }
   b.impulse(sy + 0.02, sz - R * scaleZ * 0.92, 2, R * 0.3);
   const w = d.weapons || 3;

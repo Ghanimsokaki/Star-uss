@@ -197,6 +197,7 @@ export class Game {
     rec.name = design.name;
     rec.registry = design.registry;
     rec.nacelle = design.glow;
+    rec.deflector = design.deflector;
     this.state.ships[CUSTOM_ID] = rec;
     this.state.shipId = CUSTOM_ID;
     this.state.stats.designs = (this.state.stats.designs || 0) + 1;
@@ -844,6 +845,15 @@ export class Game {
         text: t.text,
         angle: rng(i + 7) * Math.PI * 2,
         dist: 160 + rng(i + 11) * 220,
+      });
+    }
+    if (sys.id === 'sol') {
+      // a real relic: NASA's Voyager 1, drifting out of the system
+      sys.anomalies.push({
+        id: 'sol-voyager', kind: 'voyager', name: 'Voyager 1', color: '#ffe3a0',
+        rewards: { research: 260, credits: 800, xp: 80 },
+        text: 'NASA\u2019s Voyager 1, launched in 1977 and still whispering on 23 watts. The golden record is intact. Starfleet Archives would like a full scan — gently.',
+        angle: 2.2, dist: 470,
       });
     }
     return sys.anomalies;

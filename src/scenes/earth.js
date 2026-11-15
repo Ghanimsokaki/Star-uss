@@ -181,30 +181,37 @@ export class EarthScene {
   }
 
   /**
-   * The real International Space Station (NASA 3D Resources, public domain)
-   * in a 51.6° orbit. Skipped on low-end devices — it is 174k triangles.
+   * Real spacecraft from NASA 3D Resources (public domain): the International
+   * Space Station and the Hubble Space Telescope, in their real inclinations.
+   * Skipped on low-end devices — the ISS alone is 174k triangles.
    */
   async _loadISS() {
     if (this.app.viewport.quality === 'low') return;
-    const { scene } = await loadGLB('/assets/nasa/iss.glb');
-    if (!scene || !this.scene) return;
-    scene.traverse((o) => {
-      if (o.isMesh) {
-        o.material.envMapIntensity = 1.2;
-        if ('metalness' in o.material) o.material.metalness = Math.min(0.8, o.material.metalness ?? 0.5);
-      }
-    });
-    const box = new THREE.Box3().setFromObject(scene);
-    const size = box.getSize(new THREE.Vector3()).length();
-    scene.scale.setScalar(0.9 / size);
-    const pivot = new THREE.Group();
-    pivot.rotation.x = THREE.MathUtils.degToRad(51.6);
-    const holder = new THREE.Group();
-    holder.position.set(EARTH_RADIUS * 1.06, 0, 0);
-    holder.add(scene);
-    pivot.add(holder);
-    this.scene.add(pivot);
-    this.iss = { pivot, holder };
+    this.orbiters = [];
+    // ISS: 51.6° inclination, low orbit. Hubble: 28.5°, a little higher and slower.
+    const crafts = [
+      { url: '/assets/nasa/iss.glb', size: 0.9, incl: 51.6, alt: 1.06, speed: 0.155, phase: 0 },
+      { url: '/assets/nasa/hubble.glb', size: 0.55, incl: 28.5, alt: 1.09, speed: 0.13, phase: 2.4 },
+    ];
+    await Promise.all(crafts.map(async (c) => {
+      const { scene } = await loadGLB(c.url);
+      if (!scene || !this.scene) return;
+      const model = scene.clone(true);
+      model.traverse((o) => { if (o.isMesh && o.material) o.material.envMapIntensity = 1.2; });
+      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).length();
+      model.scale.setScalar(c.size / size);
+      const pivot = new THREE.Group();
+      pivot.rotation.x = THREE.MathUtils.degToRad(c.incl);
+      pivot.rotation.y = c.phase;
+      const holder = new THREE.Group();
+      holder.position.set(EARTH_RADIUS * c.alt, 0, 0);
+      holder.rotation.y = -Math.PI / 2;
+      holder.add(model);
+      pivot.add(holder);
+      this.scene.add(pivot);
+      this.orbiters.push({ pivot, holder, speed: c.speed, url: c.url });
+    }));
+    this.iss = this.orbiters[0] || null;
   }
 
   /** Layers, sun, traffic, shield, district hopping and zoom. */
@@ -615,11 +622,12 @@ export class EarthScene {
       if (f.t >= 1) this._flyTo = null;
     }
     this.globe.update(dt, t);
-    if (this.iss) {
-      // one orbit every ~40 s, nose along the velocity
-      this.iss.pivot.rotation.y += dt * 0.155;
-      this.iss.holder.rotation.y = -Math.PI / 2;
-      this.iss.pivot.visible = (this.game.state.settings.globe?.satellites !== false);
+    if (this.orbiters) {
+      const show = this.game.state.settings.globe?.satellites !== false;
+      for (const o of this.orbiters) {
+        o.pivot.rotation.y += dt * o.speed;   // ~40 s per orbit
+        o.pivot.visible = show;
+      }
     }
     this.globe.animateMarkers(this.time);
     this.globe.setGhostPulse(this.time);
