@@ -8,7 +8,7 @@ import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, NAC
 import { TECHS, TECH_ORDER } from '../data/tech.js';
 import { audio } from '../core/audio.js';
 import { escapeHtml } from '../core/util.js';
-import { CUSTOM_ID, DRAFT_ID, DEFAULT_DESIGN, DESIGN_LIMITS, SAUCER_SHAPES, sanitizeDesign, statsForDesign, registerCustomClass } from '../data/designer.js';
+import { CUSTOM_ID, DRAFT_ID, DEFAULT_DESIGN, DESIGN_LIMITS, SAUCER_SHAPES, NACELLE_STYLES, PYLON_STYLES, HULL_SHAPES, sanitizeDesign, statsForDesign, registerCustomClass } from '../data/designer.js';
 
 export class HangarScene {
   constructor(app) {
@@ -142,7 +142,7 @@ export class HangarScene {
     const id = this.previewId;
     if (id === DRAFT_ID && this._draft) {
       const d = sanitizeDesign(this._draft);
-      return { levels: { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 }, palette: PALETTES[0].id, nacelle: d.glow, deflector: '#5ab7ff', name: d.name, registry: d.registry, kills: 0 };
+      return { levels: { hull: 1, shields: 1, weapons: 1, engines: 1, sensors: 1 }, palette: PALETTES[0].id, nacelle: d.glow, deflector: d.deflector, name: d.name, registry: d.registry, kills: 0 };
     }
     if (this.game.state.ships[id]) return this.game.state.ships[id];
     const cls = SHIP_CLASSES[id];
@@ -278,17 +278,22 @@ export class HangarScene {
           ${slider('saucer', 'Saucer size', L.saucer)}
           <div class="dz-row"><span>Saucer shape</span><div class="seg" data-dz-seg="shape">${SAUCER_SHAPES.map((x) => `<button data-v="${x}" class="${this._draft.shape === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
           ${slider('weapons', 'Phaser strips', L.weapons, 1)}
+          <div class="dz-row"><span>Roll bar weapons pod</span><div class="seg" data-dz-seg="rollbar"><button data-v="true" class="${this._draft.rollbar ? 'on' : ''}">On</button><button data-v="false" class="${!this._draft.rollbar ? 'on' : ''}">Off</button></div></div>
           <div class="dz-group">Engineering hull</div>
           ${slider('hull', 'Secondary hull length (0 = none)', L.hull)}
+          <div class="dz-row"><span>Hull shape</span><div class="seg" data-dz-seg="hullShape">${HULL_SHAPES.map((x) => `<button data-v="${x}" class="${this._draft.hullShape === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
           <div class="dz-row"><span>Neck</span><div class="seg" data-dz-seg="neck"><button data-v="true" class="${this._draft.neck ? 'on' : ''}">On</button><button data-v="false" class="${!this._draft.neck ? 'on' : ''}">Off</button></div></div>
           <div class="dz-group">Warp nacelles</div>
           <div class="dz-row"><span>Count</span><div class="seg" data-dz-seg="nacelles"><button data-v="2" class="${this._draft.nacelles === 2 ? 'on' : ''}">2</button><button data-v="4" class="${this._draft.nacelles === 4 ? 'on' : ''}">4</button></div></div>
+          <div class="dz-row"><span>Style</span><div class="seg" data-dz-seg="nacelleStyle">${NACELLE_STYLES.map((x) => `<button data-v="${x}" class="${this._draft.nacelleStyle === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
+          <div class="dz-row"><span>Pylons</span><div class="seg" data-dz-seg="pylonStyle">${PYLON_STYLES.map((x) => `<button data-v="${x}" class="${this._draft.pylonStyle === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
           ${slider('nacelleLen', 'Length', L.nacelleLen)}
           ${slider('nacelleSpan', 'Span', L.nacelleSpan)}
           ${slider('nacelleHeight', 'Height', L.nacelleHeight)}
           <div class="dz-group">Paint</div>
           <div class="dz-row"><span>Hull colour</span><input type="color" data-dz="hullColor" value="${this._draft.hullColor}"></div>
           <div class="dz-row"><span>Warp glow</span><input type="color" data-dz="glow" value="${this._draft.glow}"></div>
+          <div class="dz-row"><span>Deflector</span><input type="color" data-dz="deflector" value="${this._draft.deflector}"></div>
           <div class="dz-group">Performance</div>
           <div class="dz-stats" id="dz-stats"></div>
         </div>
@@ -312,7 +317,7 @@ export class HangarScene {
         seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
         const k = seg.dataset.dzSeg;
         const v = b.dataset.v;
-        this._draft[k] = k === 'nacelles' ? +v : k === 'neck' ? v === 'true' : v;
+        this._draft[k] = k === 'nacelles' ? +v : (k === 'neck' || k === 'rollbar') ? v === 'true' : v;
         audio.ui();
         this._redesign();
       }));

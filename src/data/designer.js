@@ -22,7 +22,10 @@ export const DESIGN_LIMITS = {
   nacelleHeight: [-0.6, 1.4],
   weapons: [1, 6],           // phaser strips
 };
-export const SAUCER_SHAPES = ['round', 'oval', 'arrow'];
+export const SAUCER_SHAPES = ['round', 'oval', 'arrow', 'hex'];
+export const NACELLE_STYLES = ['classic', 'sleek', 'boxy'];
+export const PYLON_STYLES = ['straight', 'swept'];
+export const HULL_SHAPES = ['round', 'boxy'];
 export const NACELLE_COUNTS = [2, 4];
 
 export const DEFAULT_DESIGN = {
@@ -39,6 +42,11 @@ export const DEFAULT_DESIGN = {
   weapons: 3,
   hullColor: '#c3ccd6',
   glow: '#59e0ff',
+  deflector: '#5ab7ff',
+  nacelleStyle: 'classic',
+  pylonStyle: 'straight',
+  hullShape: 'round',
+  rollbar: false,
 };
 
 const clampTo = (v, [lo, hi], dflt) => (Number.isFinite(+v) ? Math.min(hi, Math.max(lo, +v)) : dflt);
@@ -61,24 +69,33 @@ export function sanitizeDesign(d = {}) {
     weapons: Math.round(clampTo(d.weapons, DESIGN_LIMITS.weapons, D.weapons)),
     hullColor: hex(d.hullColor, D.hullColor),
     glow: hex(d.glow, D.glow),
+    deflector: hex(d.deflector, D.deflector),
+    nacelleStyle: NACELLE_STYLES.includes(d.nacelleStyle) ? d.nacelleStyle : D.nacelleStyle,
+    pylonStyle: PYLON_STYLES.includes(d.pylonStyle) ? d.pylonStyle : D.pylonStyle,
+    hullShape: HULL_SHAPES.includes(d.hullShape) ? d.hullShape : D.hullShape,
+    rollbar: d.rollbar === true,
   };
 }
 
 /** Base stats for a design (same shape as SHIP_CLASSES[x].base). */
 export function statsForDesign(raw) {
   const d = sanitizeDesign(raw);
-  const mass = d.saucer * 1.2 + d.hull * 0.45 + d.nacelles * 0.25;
-  const engines = d.nacelleLen * (d.nacelles === 4 ? 1.45 : 1);
+  // every part trades something: boxy = tougher but heavier, sleek = faster
+  // but frailer, swept pylons turn better, a roll bar adds guns and weight
+  const boxyN = d.nacelleStyle === 'boxy', sleekN = d.nacelleStyle === 'sleek';
+  const mass = d.saucer * 1.2 + d.hull * (d.hullShape === 'boxy' ? 0.6 : 0.45) + d.nacelles * (boxyN ? 0.35 : 0.25) + (d.rollbar ? 0.3 : 0) + (d.shape === 'hex' ? 0.1 : 0);
+  const engines = d.nacelleLen * (d.nacelles === 4 ? 1.45 : 1) * (sleekN ? 1.12 : boxyN ? 0.92 : 1);
+  const armour = (d.hullShape === 'boxy' ? 280 : 0) + (boxyN ? 180 : 0) + (d.shape === 'hex' ? 160 : 0) - (sleekN ? 120 : 0);
   return {
-    hull: Math.round(1300 + d.saucer * 900 + d.hull * 260),
+    hull: Math.round(1300 + d.saucer * 900 + d.hull * 260 + armour),
     shield: Math.round(900 + d.saucer * 520 + d.nacelles * 90),
     regen: Math.round(14 + d.saucer * 5),
-    phaser: Math.round(36 + d.weapons * 7),
+    phaser: Math.round(36 + d.weapons * 7 + (d.rollbar ? 8 : 0)),
     fireRate: +(1.4 + d.weapons * 0.06).toFixed(2),
-    torp: Math.round(160 + d.hull * 55),
+    torp: Math.round(160 + d.hull * 55 + (d.rollbar ? 70 : 0)),
     torpRate: +(0.3 + d.hull * 0.03).toFixed(2),
     speed: Math.round(40 + engines * 9 - mass * 2.5),
-    turn: +Math.max(0.7, 1.75 - mass * 0.22 + (d.nacelleSpan < 1.2 ? 0.08 : 0)).toFixed(2),
+    turn: +Math.max(0.7, 1.75 - mass * 0.22 + (d.nacelleSpan < 1.2 ? 0.08 : 0) + (d.pylonStyle === 'swept' ? 0.07 : 0)).toFixed(2),
     sensor: +(1 + (d.shape === 'oval' ? 0.15 : 0) + d.hull * 0.03).toFixed(2),
     cargo: Math.round(120 + d.hull * 40),
   };

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildShip, disposeObject3D, makeShipMaterials, saucerGeometry, roundedBox, bodyLathe } from '../art/ships3d.js';
-import { onModelLoaded } from '../art/imported.js';
+import { onModelLoaded, loadGLB } from '../art/imported.js';
 import { buildEnemy, shieldBubble } from '../art/enemies3d.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
@@ -290,6 +290,7 @@ export class SystemScene {
       group.visible = !scanned;
       this.systemRoot.add(group);
       this.anomalyNodes.push({ group, data: a, sprite, ring, scanned });
+      if (a.kind === 'voyager') this._loadVoyager(group, sprite, ring);
     });
 
     // player
@@ -1575,6 +1576,20 @@ export class SystemScene {
   }
 
   /** Drop out of the sky next to the world we just lifted off from. */
+  /** The real Voyager probe model (NASA 3D Resources) inside its anomaly marker. */
+  async _loadVoyager(group, sprite, ring) {
+    sprite.scale.setScalar(12);
+    ring.visible = false;
+    const { scene } = await loadGLB('/assets/nasa/voyager.glb');
+    if (!scene || !group.parent) return;
+    const model = scene.clone(true);
+    const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).length();
+    model.scale.setScalar(14 / size);
+    model.traverse((o) => { if (o.isMesh && o.material) { o.material.metalness = 0.7; o.material.roughness = 0.35; } });
+    group.add(model);
+    group.userData.spin = model;
+  }
+
   /* ------------------------------------------------------------ loot + streaks */
   _showCombo() {
     const el2 = this.ui && $('#combo', this.ui);
@@ -2065,6 +2080,8 @@ export class SystemScene {
     for (const a of this.anomalyNodes) {
       if (a.scanned) continue;
       a.ring.rotation.z += dt * 0.5;
+      const sp = a.group.userData.spin;
+      if (sp) { sp.rotation.y += dt * 0.06; sp.rotation.x += dt * 0.017; }
       a.sprite.material.opacity = 0.6 + Math.sin(this.time * 2 + a.data.angle) * 0.25;
     }
     if (this.station) this.station.rotation.y += dt * 0.04;
