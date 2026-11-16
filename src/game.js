@@ -1,3 +1,4 @@
+import { stationIncome, foundStation, buildModule, removeModule } from './data/stations.js';
 import { writeSave, clearSave } from './core/savedb.js';
 import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_ORDER, MAX_UPGRADE, computeStats, moduleCost, PALETTES } from './data/ships.js';
 import { DISTRICTS, DISTRICT_ORDER, TECHS, districtUpgradeCost } from './data/tech.js';
@@ -60,8 +61,8 @@ export function newGameState(seed = 'alpha') {
     currentPlanetId: null,
     techs: [],
     missionsDone: [],
-    contractsDone: [],
-    stats: { killsBy: {}, elites: 0, kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, met: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
+    contractsDone: [], stations: {},
+    stats: { escorts: 0, stationsFounded: 0, killsBy: {}, elites: 0, kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, met: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
     // autoFire is OFF: the weapons are the player's to pull. It stays a settings
     // toggle for anyone who wants the old hands-free behaviour.
     settings: { quality: 'auto', autoPerf: true, showFps: false, muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto', hudHidden: false },
@@ -114,6 +115,7 @@ export class Game {
     // v5: planets can be landed on, which needs somewhere to remember it
     if (!this.state.landings || typeof this.state.landings !== 'object') this.state.landings = {};
     if (!Array.isArray(this.state.contractsDone)) this.state.contractsDone = [];
+    if (!this.state.stations || typeof this.state.stations !== 'object' || Array.isArray(this.state.stations)) this.state.stations = {};
     this.state.shipDamage = normalizeDamage(this.state.shipDamage);
     if (!Array.isArray(this.state.missionsDone)) this.state.missionsDone = [];
     // older saves never counted conversations: rebuild the tally from the landing records
@@ -296,8 +298,10 @@ export class Game {
     if (this.hasTech('replicator')) creditMul += 0.2;
     if (this.hasTech('terraforming')) { growth *= 1.5; popCap += 1e9; }
     const popFactor = 1 + Math.min(1.6, this.state.civ.population / 22e9);
-    const income = credits * creditMul * popFactor;
-    const researchRate = research * (this.hasTech('sensorNet') ? 1.15 : 1);
+    // your space stations add their own income on top of Earth's
+    const st = stationIncome(this.state);
+    const income = credits * creditMul * popFactor + st.credits;
+    const researchRate = (research + st.research) * (this.hasTech('sensorNet') ? 1.15 : 1);
     return {
       income, researchRate, popCap, growth, creditMul, defense, shipDiscount, repair,
       population: this.state.civ.population,
@@ -368,10 +372,38 @@ export class Game {
     this.state.playtime += dt;
     this.state.credits += civ.income * dt;
     this.state.research += civ.researchRate * dt;
+    const dil = stationIncome(this.state).dilithium;
+    if (dil) this.state.dilithium += dil * dt;
     if (this.state.civ.population < civ.popCap) {
       this.state.civ.population = Math.min(civ.popCap, this.state.civ.population * (1 + civ.growth * dt));
     }
     this.state.stats.creditsEarned += civ.income * dt;
+  }
+
+  /* ------------------------------------------------------------ space stations */
+  foundStation(systemId, name) { return this._stationAction(foundStation(this.state, systemId, name), () => { this.state.stats.stationsFounded = (this.state.stats.stationsFounded || 0) + 1; }); }
+  buildStationModule(systemId, slot, type) { return this._stationAction(buildModule(this.state, systemId, slot, type)); }
+  removeStationModule(systemId, slot) { return this._stationAction(removeModule(this.state, systemId, slot)); }
+  _stationAction(res, onOk) {
+    if (res.ok) {
+      onOk?.();
+      this.save(true);
+      this.bus.emit('change');
+      this.checkMissions();
+    }
+    return res;
+  }
+
+  /** A freighter got through a pirate attack thanks to you. */
+  recordEscort(reward) {
+    this.state.stats.escorts = (this.state.stats.escorts || 0) + 1;
+    this.state.credits += reward.credits || 0;
+    this.state.dilithium += reward.dilithium || 0;
+    this.state.stats.creditsEarned += reward.credits || 0;
+    this.addXp(reward.xp || 0);
+    this.save(true);
+    this.bus.emit('change');
+    this.checkMissions();
   }
 
   /* ------------------------------------------------------------ ships & upgrades */

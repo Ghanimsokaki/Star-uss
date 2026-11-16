@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildShip, disposeObject3D, makeShipMaterials, saucerGeometry, roundedBox, bodyLathe } from '../art/ships3d.js';
 import { onModelLoaded, loadGLB } from '../art/imported.js';
 import { buildEnemy, shieldBubble, updateNavLights } from '../art/enemies3d.js';
+import { SpaceLife } from './spacelife.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
 import { EarthGlobe, EARTH_RADIUS } from '../art/earth.js';
@@ -109,6 +110,10 @@ export class SystemScene {
     this._setupSystem();
     if (params.nearPlanet) this._spawnNear(params.nearPlanet);
     this._buildUI();
+    // your station, cargo freighters and pirate raids (scenes/spacelife.js)
+    this.life?.dispose();
+    this.life = new SpaceLife(this);
+    this.life.init();
     if (!this.game.state.flags.introSeen) this.addLog('Welcome aboard, Captain. Starfleet Command is watching.', 'good');
     const mission = this.game.currentMission;
     if (mission && this.game.state.missionsDone.length === 0) {
@@ -168,6 +173,8 @@ export class SystemScene {
   }
 
   _teardown() {
+    this.life?.dispose();
+    this.life = null;
     this.enemies.forEach((e) => {
       this.shipRoot.remove(e.group);
       disposeObject3D(e.group);
@@ -661,6 +668,7 @@ export class SystemScene {
                 <span class="tiny faint" id="enemy-count"></span>
                 <button class="btn sm ghost" id="leave-btn" title="Galaxy map (G)" style="min-height:26px;padding:4px 8px;font-size:9px">Galaxy map <span class="kbd">G</span></button>
               </div>
+              <button class="btn sm wide station-btn" id="station-btn" title="Build or add to your own space station in this system (Y)" style="margin-top:6px;min-height:26px;font-size:9px">🛰 <span data-lbl>Station</span> <span class="kbd">Y</span></button>
             </div>
             <div class="vitals damage-panel" id="damage-panel" hidden>
               <div class="row between"><span class="tiny upper" style="font-size:8.5px;color:#ffb4ad">Damage report</span><span class="tiny faint">crew repairing</span></div>
@@ -850,6 +858,16 @@ export class SystemScene {
     const input = this.app.input;
     input.update(dt);
     if (this.dead) return;
+    if (input.consume('station')) this.life?.toggleBuilder();
+    // station builder open: the ship coasts to a stop and the camera circles the station
+    if (this.life?.builder) {
+      input.consumeAll();
+      this.vel.multiplyScalar(Math.exp(-2.5 * dt));
+      this.player.position.addScaledVector(this.vel, dt);
+      this.speed = this.vel.length();
+      this.life.builderCamera(this.camera, dt);
+      return;
+    }
     const stats = this.stats;
     // gentler, more responsive helm — slower while the saucer is out of line
     const turn = stats.turn * 1.35 * damageEffects(this.game.damage).turn;
@@ -1602,7 +1620,7 @@ export class SystemScene {
     return proj;
   }
 
-  _spawnEnemyBolt(from, dir, damage, color = '#ff7a4d') {
+  _spawnEnemyBolt(from, dir, damage, color = '#ff7a4d', prey = null) {
     const geo = new THREE.SphereGeometry(0.45, 8, 6);
     const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4), toneMapped: false }));
     mesh.position.copy(from);
@@ -1614,7 +1632,7 @@ export class SystemScene {
     mesh.add(glow);
     this.fxRoot.add(mesh);
     this.projectiles.push({
-      mesh, type: 'bolt', owner: 'enemy', damage,
+      mesh, type: 'bolt', owner: 'enemy', damage, prey,
       vel: dir.clone().normalize().multiplyScalar(200), life: 4.0, radius: 1.0,
     });
   }
@@ -2435,14 +2453,18 @@ export class SystemScene {
       if (e.dead) continue;
       const pos = e.group.position;
       this._enemyLooks(e, dt);
-      const toPlayer = playerPos.clone().sub(pos);
+      // raiders go for their freighter, until you come close or start shooting
+      const prey = e.prey && !e.prey.dead ? e.prey : null;
+      const onPrey = prey && pos.distanceTo(playerPos) > 150 && e.hp >= e.maxHp * 0.98;
+      const aimAt = onPrey ? prey.group.position : playerPos;
+      const toPlayer = aimAt.clone().sub(pos);
       const dist = toPlayer.length();
       const dir = toPlayer.clone().normalize();
 
       // face the player (models have +Z forward)
       if (!this._aim) this._aim = new THREE.Object3D();
       this._aim.position.copy(pos);
-      this._aim.lookAt(playerPos);
+      this._aim.lookAt(aimAt);
       e.group.quaternion.slerp(this._aim.quaternion, Math.min(1, (e.def.turn || 1) * 0.9 * dt));
 
       // movement
@@ -2457,7 +2479,7 @@ export class SystemScene {
       }
 
       // keep near the fight if player runs
-      if (dist > 1100) pos.lerp(playerPos.clone().sub(dir.multiplyScalar(180)), 0.02);
+      if (dist > 1100 && !onPrey) pos.lerp(playerPos.clone().sub(dir.multiplyScalar(180)), 0.02);
 
       // cloaking (Birds of Prey / Warbirds)
       if (e.def.cloak && dist > 90) {
@@ -2491,9 +2513,9 @@ export class SystemScene {
         if (angle > 0.72) {
           e.fireCd = Math.max(0.5, 1.6 / (e.def.fireRate || 1)) * (0.7 + Math.random() * 0.6);
           const muzzle = pos.clone().addScaledVector(forward, e.radius * 0.8);
-          const lead = playerPos.clone().addScaledVector(this.vel, 0.4);
+          const lead = onPrey ? aimAt.clone() : playerPos.clone().addScaledVector(this.vel, 0.4);
           const shotDir = lead.sub(muzzle).normalize();
-          this._spawnEnemyBolt(muzzle, shotDir, e.def.dmg, e.def.colors.glow);
+          this._spawnEnemyBolt(muzzle, shotDir, e.def.dmg, e.def.colors.glow, onPrey ? prey : null);
           audio.phaser(-0.3);
         }
       }
@@ -2527,8 +2549,15 @@ export class SystemScene {
           }
         }
       } else {
-        // point-defence window shreds incoming bolts before they reach the hull
-        if (this.pointDefenseTimer > 0) {
+        // a pirate bolt aimed at a freighter
+        if (p.prey) {
+          if (!p.prey.dead && p.mesh.position.distanceTo(p.prey.group.position) < p.prey.radius) {
+            this.life?.hitFreighter(p.prey, p.damage);
+            this._impact(p.mesh.position.clone(), '#ffb347');
+            hit = true;
+          }
+        } else if (this.pointDefenseTimer > 0) {
+          // point-defence window shreds incoming bolts before they reach the hull
           this._impact(p.mesh.position.clone(), '#8fd6ff');
           this._removeProjectile(p);
           this.projectiles.splice(i, 1);
@@ -2730,6 +2759,7 @@ export class SystemScene {
       if (!this.player || this.app.current !== this || this.interior?.active) return;
       this._updateEnemies(capped);
       this._updateWrecks(capped);
+      this.life?.update(capped);
       if (!this._redAlerted) {
         const close = this.enemies.some((e) => !e.dead && e.group.position.distanceTo(this.player.position) < 700);
         if (close) {

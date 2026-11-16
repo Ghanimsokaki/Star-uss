@@ -80,6 +80,24 @@ export const MISSIONS = [
     progress: (s) => [Math.min(3, killsOf(s, 'orion')), 3],
   },
   {
+    id: 'm-convoy',
+    title: 'Convoy Escort',
+    desc: 'Cargo freighters fly between the planets. When pirates attack one, drive them off before it is destroyed.',
+    hint: 'Fly around any system with two or more planets. Watch for the "Freighter under attack" alarm.',
+    reward: { credits: 4000, dilithium: 35 },
+    check: (s) => (s.stats.escorts || 0) >= 1,
+    progress: (s) => [Math.min(1, s.stats.escorts || 0), 1],
+  },
+  {
+    id: 'm-station',
+    title: 'Home Among the Stars',
+    desc: 'Found your own space station and build three modules on it.',
+    hint: 'In any system you have visited, press Y (or the 🛰 Station button), found it, then pick modules and slots.',
+    reward: { credits: 6000, research: 200 },
+    check: (s) => Object.values(s.stations || {}).some((st) => Object.keys(st.modules || {}).length >= 3),
+    progress: (s) => [Math.min(3, Math.max(0, ...Object.values(s.stations || {}).map((st) => Object.keys(st.modules || {}).length))), 3],
+  },
+  {
     id: 'm-prospect',
     title: 'Prospector\u2019s Luck',
     desc: 'Scan five glowing deposits on planetary surfaces.',
@@ -339,6 +357,9 @@ export const CONTRACTS = [
   { id: 'c-elite', title: 'Elite Squadron', desc: 'Destroy 5 Elite enemy ships.', reward: { credits: 22000, research: 500 }, ...count((s) => s.stats.elites || 0, 5) },
   { id: 'c-know-enemy', title: 'Know Your Enemy', desc: 'Destroy 8 different kinds of enemy ship.', reward: { credits: 25000, research: 800, dilithium: 100 }, ...count((s) => kindsBeaten(s), 8) },
   { id: 'c-legend', title: 'Living Legend', desc: 'Destroy 100 hostile ships.', reward: { credits: 60000, research: 1500, dilithium: 250 }, ...count((s) => s.stats.kills, 100) },
+  { id: 'c-convoy', title: 'Convoy Guardian', desc: 'Save 10 freighters from pirates.', reward: { credits: 15000, dilithium: 120 }, ...count((s) => s.stats.escorts || 0, 10) },
+  { id: 'c-station-full', title: 'Fully Loaded', desc: 'Fill all 12 slots on one of your stations.', reward: { credits: 20000, research: 600 }, ...count((s) => Math.max(0, ...Object.values(s.stations || {}).map((st) => Object.keys(st.modules || {}).length)), 12) },
+  { id: 'c-station-net', title: 'Station Network', desc: 'Run stations in 3 different systems.', reward: { credits: 25000, research: 800, dilithium: 150 }, ...count((s) => Object.keys(s.stations || {}).length, 3) },
   { id: 'c-tycoon', title: 'Tycoon', desc: 'Earn ₡250,000 over your career.', reward: { research: 1200, dilithium: 120 }, ...count((s) => Math.floor(s.stats.creditsEarned || 0), 250000) },
 ];
 
