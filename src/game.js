@@ -1,3 +1,4 @@
+import { writeSave, clearSave } from './core/savedb.js';
 import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_ORDER, MAX_UPGRADE, computeStats, moduleCost, PALETTES } from './data/ships.js';
 import { DISTRICTS, DISTRICT_ORDER, TECHS, districtUpgradeCost } from './data/tech.js';
 import { buildGalaxy, planetById, surveyPlanet, warpCost, PLANET_TYPES } from './data/galaxy.js';
@@ -6,7 +7,7 @@ import { storage, uid, clamp } from './core/util.js';
 import { CUSTOM_ID, registerCustomClass, sanitizeDesign, costForDesign } from './data/designer.js';
 import { normalizeDamage, freshDamage, effects as damageEffects, anyDamage } from './core/damage.js';
 
-const SAVE_KEY = 'startrek.ascension.save.v1';
+export const SAVE_KEY = 'startrek.ascension.save.v1';
 const SAVE_VERSION = 5;
 
 function defaultLevels() {
@@ -162,7 +163,13 @@ export class Game {
     // set while a different save is being swapped in, so unload can't clobber it
     if (this.saveLocked) return;
     this.state.lastSave = Date.now();
+    // localStorage: instant, and readable synchronously on the way out of the page
     storage.set(SAVE_KEY, this.state);
+    // IndexedDB: the main save, plus automatic backups (written a moment later,
+    // so a burst of saves becomes one database write)
+    clearTimeout(this._idbTimer);
+    // (after any reset in progress, so the new game's save can't be wiped by it)
+    this._idbTimer = setTimeout(() => { (this._resetChain || Promise.resolve()).then(() => writeSave(this.state)); }, force ? 50 : 600);
     if (force) this.bus.emit('saved');
   }
   scheduleSave() {
@@ -170,6 +177,10 @@ export class Game {
     this._saveTimer = setTimeout(() => { this._saveTimer = null; this.save(); }, 1500);
   }
   reset() {
+    // file one last backup first, so a reset can be undone from Settings
+    const old = this.state;
+    clearTimeout(this._idbTimer);
+    this._resetChain = writeSave(old, { forceBackup: true }).then(() => clearSave()).catch(() => {});
     storage.del(SAVE_KEY);
     registerCustomClass(null);
     this.state = newGameState();

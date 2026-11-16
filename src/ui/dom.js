@@ -99,8 +99,9 @@ export function confirmModal({ title, body, ok = 'Confirm', cancel = 'Cancel', d
       footer: `<button class="btn ghost" data-no>${cancel}</button><button class="btn ${danger ? 'danger' : 'primary'}" data-yes>${ok}</button>`,
       onClose: () => resolve(false),
     });
-    m.el.querySelector('[data-no]').onclick = () => { m.close(); resolve(false); };
-    m.el.querySelector('[data-yes]').onclick = () => { m.close(); resolve(true); };
+    // answer first: closing the dialog fires onClose, which would otherwise answer "no"
+    m.el.querySelector('[data-no]').onclick = () => { resolve(false); m.close(); };
+    m.el.querySelector('[data-yes]').onclick = () => { resolve(true); m.close(); };
   });
 }
 

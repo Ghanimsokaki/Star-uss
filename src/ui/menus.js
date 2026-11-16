@@ -4,6 +4,7 @@ import { SHIP_CLASSES, SHIP_ORDER, UPGRADE_SYSTEMS, UPGRADE_ORDER, PALETTES, TIM
 import { ENEMIES } from '../data/enemies.js';
 import { TECHS, TECH_ORDER, DISTRICTS, CODEX_ARTICLES } from '../data/tech.js';
 import { MISSIONS, RANK_TITLES } from '../data/missions.js';
+import { listBackups, readBackup, writeSave, indexedDbAvailable, MAX_BACKUPS } from '../core/savedb.js';
 
 function rewardChips(r = {}) {
   return `${r.credits ? `<span class="chip amber">+${fmtC(r.credits)}</span>` : ''}${r.dilithium ? `<span class="chip cyan">+${r.dilithium} dilithium</span>` : ''}${r.research ? `<span class="chip violet">+${fmt(r.research)} RP</span>` : ''}`;
@@ -211,8 +212,16 @@ export function showSettings(app) {
         </div>
       </div>
       <div class="setting-row">
-        <div><div class="nm">Save game</div><div class="ds">Last saved ${new Date(g.state.lastSave || Date.now()).toLocaleString()}</div></div>
+        <div><div class="nm">Save game</div><div class="ds">Saved in this browser's database (IndexedDB) · last saved ${new Date(g.state.lastSave || Date.now()).toLocaleString()}</div></div>
         <button class="btn sm" data-save>Save now</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Backups</div><div class="ds">A snapshot every few minutes of play (the last ${MAX_BACKUPS}). Go back to one if something goes wrong.</div></div>
+        <button class="btn sm" data-backups>Backups</button>
+      </div>
+      <div class="setting-row">
+        <div><div class="nm">Save file</div><div class="ds">Download your save, or load one (to move your game to another browser)</div></div>
+        <div class="row" style="gap:6px"><button class="btn sm" data-export>Download</button><button class="btn sm" data-import>Load file</button></div>
       </div>
       <div class="setting-row" style="border-bottom:0">
         <div><div class="nm" style="color:#ff9d94">Reset universe</div><div class="ds">Erase your save and start a new mission</div></div>
@@ -297,9 +306,38 @@ export function showSettings(app) {
     g.save();
   }));
   elm.querySelector('[data-save]').onclick = () => { g.save(true); toast('Mission data saved', 'good'); };
+  elm.querySelector('[data-backups]').onclick = () => showBackups(app);
+  elm.querySelector('[data-export]').onclick = () => {
+    g.save(true);
+    const blob = new Blob([JSON.stringify(g.state, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `star-uss-save-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('Save file downloaded', 'good');
+  };
+  elm.querySelector('[data-import]').onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      if (f.size > 5e6) { toast('That file is too big to be a save', 'bad'); return; }
+      let data = null;
+      try { data = JSON.parse(await f.text()); } catch { /* handled below */ }
+      if (!data || typeof data !== 'object' || data.credits == null || !data.ships) { toast('That file is not a Star USS save', 'bad'); return; }
+      const { confirmModal } = await import('./dom.js');
+      const yes = await confirmModal({ title: 'Load this save?', body: 'Your current game is backed up first, so you can come back to it from Backups.', ok: 'Load save' });
+      if (!yes) return;
+      await writeSave(g.state, { forceBackup: true });
+      app.loadSaveData(data, 'Save file loaded');
+    };
+    input.click();
+  };
   elm.querySelector('[data-reset]').onclick = async () => {
     const { confirmModal } = await import('./dom.js');
-    const yes = await confirmModal({ title: 'Reset universe?', body: 'Every ship, district and discovery will be erased. This cannot be undone.', ok: 'Erase and restart', danger: true });
+    const yes = await confirmModal({ title: 'Reset universe?', body: 'Every ship, district and discovery will be erased. (A backup is kept, so you can still go back from Settings → Backups.)', ok: 'Erase and restart', danger: true });
     if (yes) {
       g.reset();
       m.close();
@@ -307,6 +345,30 @@ export function showSettings(app) {
     }
   };
   elm.querySelector('[data-close2]').onclick = () => m.close();
+}
+
+/** The backups list: pick one to go back to. */
+export async function showBackups(app) {
+  const list = await listBackups();
+  const rows = list.length ? list.map((b) => `
+    <div class="setting-row">
+      <div><div class="nm">${new Date(b.at).toLocaleString()}</div>
+        <div class="ds">${fmtC(b.summary?.credits || 0)} · ${b.summary?.ships || 0} ships · ${b.summary?.districts || 0} districts · ${b.summary?.kills || 0} kills${b.summary?.shipName ? ` · ${escapeHtml(b.summary.shipName)}` : ''}</div></div>
+      <button class="btn sm" data-restore="${b.id}">Restore</button>
+    </div>`).join('')
+    : `<p class="small dim">${indexedDbAvailable() ? 'No backups yet. The first one is made a few minutes into play.' : 'This browser has no IndexedDB, so backups are not available here. Use Download in Settings instead.'}</p>`;
+  const m = modal({ title: 'Save backups', sub: 'Stored in IndexedDB on this device', body: rows, footer: '<button class="btn ghost" data-close2>Close</button>' });
+  m.el.querySelector('[data-close2]').onclick = () => m.close();
+  m.el.querySelectorAll('[data-restore]').forEach((btn) => btn.addEventListener('click', async () => {
+    const { confirmModal } = await import('./dom.js');
+    const yes = await confirmModal({ title: 'Go back to this backup?', body: 'Your game right now is backed up first, so you can change your mind.', ok: 'Restore' });
+    if (!yes) return;
+    const state = await readBackup(Number(btn.dataset.restore));
+    if (!state) { toast('That backup could not be read', 'bad'); return; }
+    await writeSave(app.game.state, { forceBackup: true });
+    m.close();
+    app.loadSaveData(state, 'Backup restored');
+  }));
 }
 
 export function showMissionLog(game, tab = 'story') {
@@ -511,7 +573,7 @@ export async function reconcileCloudSave(app, cloud) {
     body: `Your account has progress from ${new Date(cloudAt).toLocaleString()}, newer than this device. Load it here? (This device\u2019s save will be replaced.)`,
     ok: 'Load cloud save', cancel: 'Keep this device',
   });
-  if (yes) app.loadSaveData?.(res.save);
+  if (yes) app.loadSaveData?.(res.save, 'Cloud save loaded');
   else await cloud.pushSave(g.state);
 }
 
@@ -538,7 +600,7 @@ function accountSignedIn(app, cloud, u) {
     const r = await cloud.pullSave();
     if (!r.ok || !r.save) { toast(r.why || 'No cloud save yet', 'warn'); return; }
     m.close();
-    app.loadSaveData?.(r.save);
+    app.loadSaveData?.(r.save, 'Cloud save loaded');
   };
   E.querySelector('[data-lb]').onclick = () => { m.close(); showLeaderboard(); };
   E.querySelector('[data-out]').onclick = async () => { await cloud.signOut(); m.close(); toast('Signed out', 'good'); };

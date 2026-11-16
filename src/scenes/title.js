@@ -120,7 +120,7 @@ export class TitleScene {
       if (Game.hasSave()) {
         const yes = await confirmModal({
           title: 'Start a new mission?',
-          body: 'Your existing save will be overwritten. All ships, districts and discoveries will be lost.',
+          body: 'Your existing save will be replaced with a new game. (A backup is kept: Settings → Backups brings it back.)',
           ok: 'Start fresh', danger: true,
         });
         if (!yes) return;
