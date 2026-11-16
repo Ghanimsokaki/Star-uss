@@ -69,3 +69,46 @@ export function assistFor(localDir, { strength = 1, xGain = 1.6, yGain = 1.6, xM
     y: clamp(localDir.y * yGain, -1, 1) * yMax * strength,
   };
 }
+
+/* ------------------------------------------------------------ flight helm */
+export const MAX_PITCH = 1.3;      // ~75°: the nose can point steeply, but never flips over the top
+export const LEVEL_RATE = 1.1;     // per second: how quickly the nose eases back to level when let go
+
+const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _fwd = new THREE.Vector3();
+
+/** Heading (yaw) and climb angle (pitch) of a hull's nose. */
+export function headingOf(q) {
+  _fwd.set(0, 0, 1).applyQuaternion(q);
+  return {
+    yaw: Math.atan2(_fwd.x, _fwd.z),
+    pitch: Math.asin(Math.max(-1, Math.min(1, _fwd.y))),
+  };
+}
+
+/**
+ * Plane-style steering. The ship turns about the world's up axis and tips its
+ * nose up and down, but never rolls (the bank you see is purely visual) and
+ * never pitches past MAX_PITCH, so it can't loop over and fly upside down.
+ * With no pitch input the nose eases back to level on its own — let go of
+ * the stick and the ship flies straight.
+ *
+ * @param {THREE.Quaternion} q   hull orientation, rewritten in place
+ * @param {{x:number,y:number}} steer  +x = starboard, +y = nose up
+ * @param {{turn:number, dt:number, invertY?:boolean, level?:number}} opts
+ *        level: 0..1 how strongly to self-level (0 = off, e.g. autopilot)
+ */
+export function flyHelm(q, steer, { turn, dt, invertY = false, level = 1 }) {
+  const sx = Number.isFinite(steer?.x) ? steer.x : 0;
+  let sy = Number.isFinite(steer?.y) ? steer.y : 0;
+  if (invertY) sy = -sy;
+  let { yaw, pitch } = headingOf(q);
+  // starboard is a negative yaw (same convention as applyHelm)
+  yaw -= sx * turn * YAW_RATE * dt;
+  pitch += sy * turn * PITCH_RATE * dt;
+  if (Math.abs(sy) < 0.05 && level > 0) pitch -= pitch * Math.min(1, LEVEL_RATE * level * dt);
+  pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, pitch));
+  _euler.set(-pitch, yaw, 0, 'YXZ');
+  q.setFromEuler(_euler);
+  return q;
+}

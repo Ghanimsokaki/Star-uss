@@ -7,9 +7,9 @@
  * not instantly, so a hard turn at speed carries you wide before you bite —
  * that drift is what makes flying feel physical.
  *
- *   W / S       forward / reverse thrust
- *   Space/Shift climb / descend (dorsal and ventral thrusters)
- *   cruise      a held forward speed (Z/C, the touch rail), 0..1
+ *   cruise      the held forward speed, 0..1 (Space / Shift, the touch strip)
+ *   thrust      -1 backs up (Shift held at a stop); +1 full ahead
+ *   lift        climb / descend thrusters (the on-screen pads on touch)
  *
  * Pure maths on plain vectors: unit-tested in tests/flight.test.mjs.
  */
@@ -68,7 +68,8 @@ export function stepFlight(vel, q, ctl, hull, dt) {
   _local.y = approach(_local.y, goalY, accel * 0.8 * dt);
   // dampeners: sideways slip decays exponentially (this is the drift)
   _local.x *= Math.exp(-FLIGHT.slipDamp / mass * dt);
-  if (!(ctl.lift)) _local.y *= Math.exp(-FLIGHT.slipDamp * 0.5 / mass * dt);
+  // no climb input: vertical drift settles quickly (it used to carry the ship up for ages)
+  if (!(ctl.lift)) _local.y *= Math.exp(-FLIGHT.slipDamp * 1.5 / mass * dt);
 
   return vel.copy(_local.applyQuaternion(q));
 }

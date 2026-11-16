@@ -59,12 +59,43 @@ test('autopilot turns toward and flies at its destination', () => {
   assert.ok(ahead.thrust > 0.5);
 });
 
-test('keys: W/S thrust, Space/Shift lift, weapons moved off Space/Shift', () => {
+test('keys: weapons stay off Space/Shift (those are speed now)', () => {
   const src = fs.readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
-  assert.match(src, /this\.keys\.has\('w'\)\) th \+= 1/);
-  assert.match(src, /this\.keys\.has\(' '\)\) lift \+= 1/);
-  assert.match(src, /this\.keys\.has\('shift'\)\) lift -= 1/);
   assert.doesNotMatch(src, /k === ' '\) \{ this\._press\('fire'\)/);
+});
+
+test('keys: W/S tip the nose, A/D turn, Space speeds up, Shift slows down', async () => {
+  globalThis.window ??= { addEventListener() {} };
+  const { Input } = await import('../src/core/input.js');
+  // drive update() without a real canvas or window
+  const inp = Object.create(Input.prototype);
+  Object.assign(inp, {
+    keys: new Set(), actions: { thrust: false, reverse: false, up: false, down: false, throttleUp: false, throttleDown: false },
+    steer: { x: 0, y: 0 }, rawSteer: { x: 0, y: 0 }, ndc: { x: 0, y: 0 }, stick: { x: 0, y: 0, active: false },
+    mouseActive: false, mouseIdle: 99, scheme: 'pointer', lookLocked: false, _padPrev: {},
+  });
+  const run = (...keys) => { inp.keys = new Set(keys); for (let i = 0; i < 30; i++) inp.update(1 / 60); return inp; };
+  assert.ok(run('w').rawSteer.y === 1 && inp.throttleRate === 0, 'W = nose up, not thrust');
+  assert.ok(run('s').rawSteer.y === -1);
+  assert.ok(run('d').rawSteer.x === 1 && run('a').rawSteer.x === -1);
+  assert.equal(run(' ').throttleRate, 1, 'Space = faster');
+  assert.equal(inp.lift, 0, 'Space no longer climbs');
+  assert.equal(run('shift').throttleRate, -1, 'Shift = slower');
+  assert.equal(run('arrowup').rawSteer.y, 1);
+});
+
+test('mouse: a cursor left resting stops steering', async () => {
+  const { Input, MOUSE_HOLD, MOUSE_FADE } = await import('../src/core/input.js');
+  const inp = Object.create(Input.prototype);
+  Object.assign(inp, {
+    keys: new Set(), actions: {}, steer: { x: 0, y: 0 }, rawSteer: { x: 0, y: 0 }, ndc: { x: 0, y: 0.9 },
+    stick: { x: 0, y: 0, active: false }, mouseActive: true, mouseIdle: 0, scheme: 'pointer', lookLocked: false, _padPrev: {},
+  });
+  inp.update(1 / 60);
+  assert.ok(inp.rawSteer.y > 0.5, 'cursor near the top pulls the nose up');
+  inp.mouseIdle = MOUSE_HOLD + MOUSE_FADE + 0.1;
+  inp.update(1 / 60);
+  assert.equal(inp.rawSteer.y, 0, 'and stops once the cursor has rested');
 });
 
 test('no method in the flight scene is defined twice (a later one silently replaces the first)', () => {

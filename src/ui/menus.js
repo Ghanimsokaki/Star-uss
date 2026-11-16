@@ -103,11 +103,11 @@ export function showHowTo() {
       <div class="grid2" style="gap:10px">
         <div class="codex-entry" style="${touch ? 'opacity:.55' : ''}">
           <h4>Flight — Mouse &amp; keyboard</h4>
-          <p><b>W</b> forward · <b>S</b> back · <b>A</b>/<b>D</b> turn · <b>Space</b> up · <b>Shift</b> down · <b>mouse</b>/arrows aim · <b>left click</b>/<b>K</b> phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>B</b> boost · <b>P</b> autopilot · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> cruise speed · <b>X</b> all stop · <b>V</b> weapons assist · <b>right-drag</b> or two-finger swipe looks around · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
+          <p><b>W</b> nose up · <b>S</b> nose down · <b>A</b>/<b>D</b> turn · <b>Space</b> speed up · <b>Left Shift</b> slow down (hold at a stop to back up) · let go and the ship levels out · <b>mouse</b>/trackpad/arrows aim · <b>left click</b>/<b>K</b> phasers · <b>F</b> torpedoes · <b>E</b> ability · <b>B</b> boost · <b>P</b> autopilot · <b>Q</b> target · <b>R</b> scan · <b>T</b> warp · <b>Z</b>/<b>C</b> also change speed · <b>X</b> all stop · <b>V</b> weapons assist · <b>right-drag</b> or two-finger swipe looks around · <b>Esc</b> close panels<br><span class="tiny faint">A gamepad works too: left stick steers, RT fires, LT torpedoes, A ability, B target, X scan, Y warp, d-pad throttle.</span></p>
         </div>
         <div class="codex-entry" style="${touch ? '' : 'opacity:.55'}">
           <h4>Flight — Touch</h4>
-          <p><b>Drag anywhere</b> on the view to steer, then let go — no joystick to find. <b>Tap</b> the view to lock the nearest target. The right-hand arc is your thumb: <b>FIRE</b>, <b>TORP</b>, <b>✷</b> ability, <b>BOOST</b>, <b>SCAN</b>, <b>WARP</b>. The <b>▲▼</b> rail on the right edge is impulse throttle and the <b>■</b> button is all-stop.</p>
+          <p><b>Drag anywhere</b> on the view to steer, then let go — no joystick to find. <b>Tap</b> the view to lock the nearest target. The right-hand arc is your thumb: <b>FIRE</b>, <b>TORP</b>, <b>✷</b> ability, <b>BOOST</b>, <b>SCAN</b>, <b>WARP</b>. The <b>speed strip</b> on the right works like a touchpad: drag up for faster, down for slower, double-tap to stop.</p>
         </div>
         <div class="codex-entry">
           <h4>Earth &amp; Civilisation</h4>

@@ -13,6 +13,10 @@ import { device, isTouchScheme, onDeviceChange } from './device.js';
  * "tank controls", in both schemes. Everything is smoothed so a thumb twitch
  * cannot snap the hull around.
  */
+/** A still cursor keeps steering this long (s), then fades out over MOUSE_FADE. */
+export const MOUSE_HOLD = 1.6;
+export const MOUSE_FADE = 0.6;
+
 export class Input {
   constructor(canvas) {
     this.canvas = canvas;
@@ -22,7 +26,7 @@ export class Input {
       throttleUp: false, throttleDown: false,
       thrust: false, reverse: false, up: false, down: false, repair: false,
     };
-    this.thrust = 0;   // -1 reverse .. +1 forward (W / S)
+    this.thrust = 0;   // kept for callers; speed is the scene's throttle now
     this.lift = 0;     // -1 down .. +1 up (Shift / Space)
     this.pressed = new Set();
     this.steer = { x: 0, y: 0 };
@@ -68,9 +72,12 @@ export class Input {
       if (isTyping(e)) return;
       const k = e.key.toLowerCase();
       this.keys.add(k);
-      // Flight keys: W/S thrust, A/D turn, Space up, Shift down (read each
-      // frame in update()). Weapons moved off Space/Shift to make room.
-      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+      // Flight keys: W/S nose, A/D turn, Space faster, Shift slower (read each
+      // frame in update()). Weapons stay off Space/Shift.
+      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup', 'pagedown'].includes(k)) e.preventDefault();
+      // Space is the throttle: it must not also "click" whichever HUD button was
+      // clicked last (that toggled autopilot and friends). Enter still presses buttons.
+      if (k === ' ' && document.activeElement?.tagName === 'BUTTON' && !document.querySelector('.modal-layer')) document.activeElement.blur();
       // Tab cycles targets in flight, but must keep moving focus in menus/dialogs
       if (k === 'tab' && (!document.activeElement || document.activeElement === document.body || document.activeElement === this.canvas) && !document.querySelector('.modal-layer')) e.preventDefault();
       if (k === 'k') { this._press('fire'); this.actions.fire = true; }
@@ -94,6 +101,8 @@ export class Input {
       if (isTyping(e)) return;
       const k = e.key.toLowerCase();
       this.keys.delete(k);
+      // with ⌘ held, macOS never sends key-ups for the other keys: let go of everything
+      if (k === 'meta') this.keys.clear();
       if (k === 'k') this.actions.fire = false;
       if (k === 'f') this.actions.torpedo = false;
       if (k === 'b') this.actions.boost = false;
@@ -104,7 +113,11 @@ export class Input {
     const onMove = (e) => {
       if (e.pointerType && e.pointerType !== 'mouse') return;   // thumbs use the drag path
       if (this.scheme !== 'pointer' || this.lookLocked) return;
-      if (e.target !== this.canvas && e.target?.tagName !== 'CANVAS') return;
+      if (e.target !== this.canvas && e.target?.tagName !== 'CANVAS') {
+        // over a button or panel: the cursor is there to click, not to steer
+        this.ndc.x = 0; this.ndc.y = 0;
+        return;
+      }
       const r = this.canvas.getBoundingClientRect();
       this.ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
       this.ndc.y = -(((e.clientY - r.top) / r.height) * 2 - 1);
@@ -112,6 +125,8 @@ export class Input {
       this.mouseIdle = 0;
     };
     window.addEventListener('pointermove', onMove, { passive: true });
+    // the cursor left the window: stop steering (it used to keep pulling the nose up)
+    document.addEventListener('mouseleave', () => { this.ndc.x = 0; this.ndc.y = 0; this.mouseActive = false; });
 
     const onDown = (e) => {
       if (e.target !== this.canvas) return;
@@ -324,24 +339,20 @@ export class Input {
   /** Called once per frame by the flight scene. */
   update(dt) {
     this.mouseIdle += dt;
+    // Flight keys, plane style:
+    //   W / ↑  nose up     S / ↓  nose down     A / ←  D / →  turn
+    //   Space  speed up    Shift  slow down (hold it at a stop to back up)
     let kx = 0, ky = 0;
     if (this.keys.has('a') || this.keys.has('arrowleft')) kx -= 1;
     if (this.keys.has('d') || this.keys.has('arrowright')) kx += 1;
-    // arrows still pitch the nose; W/S are engines now
-    if (this.keys.has('arrowup')) ky += 1;
-    if (this.keys.has('arrowdown')) ky -= 1;
+    if (this.keys.has('w') || this.keys.has('arrowup')) ky += 1;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) ky -= 1;
 
-    // engines: W forward / S reverse, Space up / Shift down (plus on-screen pads)
-    let th = 0, lift = 0;
-    if (this.keys.has('w')) th += 1;
-    if (this.keys.has('s')) th -= 1;
-    if (this.keys.has(' ')) lift += 1;
-    if (this.keys.has('shift')) lift -= 1;
-    if (this.actions.thrust) th += 1;
-    if (this.actions.reverse) th -= 1;
-    if (this.actions.up) lift += 1;
-    if (this.actions.down) lift -= 1;
-    this.thrust = clamp(th, -1, 1);
+    // the on-screen pads still give direct climb / descend thrust on touch
+    let lift = 0;
+    if (this.actions.up || this.keys.has('pageup')) lift += 1;
+    if (this.actions.down || this.keys.has('pagedown')) lift -= 1;
+    this.thrust = 0;
     this.lift = clamp(lift, -1, 1);
 
     let mx = 0, my = 0;
@@ -352,12 +363,15 @@ export class Input {
     } else if (this.stick.active) {
       mx = this.stick.x;
       my = this.stick.y;
-    } else if (this.mouseActive && !this.lookLocked && this.mouseIdle < 2.4 && this.scheme === 'pointer') {
-      // generous dead zone in the middle, exponential authority toward the edges
-      const dead = 0.14;
+    } else if (this.mouseActive && !this.lookLocked && this.mouseIdle < MOUSE_HOLD + MOUSE_FADE && this.scheme === 'pointer') {
+      // generous dead zone in the middle, smooth curve toward the edges
+      const dead = 0.18;
       const dz = (v) => (Math.abs(v) < dead ? 0 : (Math.abs(v) - dead) / (1 - dead));
-      mx = Math.sign(this.ndc.x) * Math.pow(dz(this.ndc.x), 1.6);
-      my = Math.sign(this.ndc.y) * Math.pow(dz(this.ndc.y), 1.6);
+      // a cursor left resting stops steering after a moment, so the ship
+      // can't keep circling or climbing on its own
+      const fade = clamp(1 - (this.mouseIdle - MOUSE_HOLD) / MOUSE_FADE, 0, 1);
+      mx = Math.sign(this.ndc.x) * Math.pow(dz(this.ndc.x), 1.5) * fade;
+      my = Math.sign(this.ndc.y) * Math.pow(dz(this.ndc.y), 1.5) * fade * 0.85;
     }
     this.rawSteer.x = clamp(kx + mx, -1, 1);
     this.rawSteer.y = clamp(ky + my, -1, 1);
@@ -366,11 +380,12 @@ export class Input {
     this.steer.x += (this.rawSteer.x - this.steer.x) * s;
     this.steer.y += (this.rawSteer.y - this.steer.y) * s;
 
-    // throttle: keys z/x, on-screen hold buttons, or the d-pad
+    // speed: Space / Z / ▲ / the forward pad up, Shift / C / ▼ / the reverse pad down
     this.throttleRate = 0;
-    if (this.keys.has('z') || this.actions.throttleUp) this.throttleRate += 1;
-    if (this.keys.has('c') || this.actions.throttleDown) this.throttleRate -= 1;
-    if (this.actions.throttleUp && this.actions.throttleDown) this.throttleRate = 0;
+    const faster = this.keys.has(' ') || this.keys.has('z') || this.actions.throttleUp || this.actions.thrust;
+    const slower = this.keys.has('shift') || this.keys.has('c') || this.actions.throttleDown || this.actions.reverse;
+    if (faster) this.throttleRate += 1;
+    if (slower) this.throttleRate -= 1;
   }
 
 }
