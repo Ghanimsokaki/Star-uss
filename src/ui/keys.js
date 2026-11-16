@@ -78,6 +78,7 @@ export const CONTROLS = {
     ['P', 'Autopilot'],
     ['Z / C · X', 'Also speed up / slow down · all stop'],
     ['Page Up / Page Down', 'Climb / descend straight up or down'],
+    ['Y', 'Your space station: found one here or build modules (← → slot · 1–8 module · Enter build · Del remove)'],
     ['G', 'Galaxy map'],
     ['U', 'Hide every panel'],
     ['L', 'Land on the nearest planet'],

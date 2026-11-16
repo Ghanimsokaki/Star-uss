@@ -96,6 +96,7 @@ export class Input {
       if (k === 'i') this._press('interior');
       if (k === 'escape') this._press('back');
       if (k === 'h') this._press('help');
+      if (k === 'y') this._press('station');
     });
     window.addEventListener('keyup', (e) => {
       if (isTyping(e)) return;

@@ -1274,3 +1274,62 @@ body.below-decks .view-controls { display: none; }
 /* keyboard hints on the CAM / HIDE UI buttons (not on touch, where there is no keyboard) */
 .vc-btn .kc { margin-left: 2px; opacity: .6; }
 .touch-mode .vc-btn .kc { display: none; }
+
+/* ---------------------------------------------------------- your space station */
+.station-builder {
+  position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%);
+  width: min(760px, calc(100vw - 24px)); max-height: 58vh; overflow: auto; z-index: 30;
+  padding: 12px 14px; border-radius: 14px;
+  background: rgba(8, 14, 24, .9); border: 1px solid rgba(89, 224, 255, .3);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .5); backdrop-filter: blur(10px);
+  pointer-events: auto; animation: sb-in .25s ease-out;
+}
+@keyframes sb-in { from { opacity: 0; transform: translate(-50%, 16px); } }
+.sb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.sb-head b { font-family: var(--font-h); font-size: 12px; letter-spacing: .08em; color: var(--cyan); }
+.sb-head .close-x { margin-left: auto; }
+.sb-slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
+.sb-slot {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 2px; border-radius: 8px;
+  background: rgba(20, 34, 52, .7); border: 1px solid rgba(140, 200, 240, .18); color: var(--ink-dim); cursor: pointer;
+}
+.sb-slot .ic { font-size: 16px; line-height: 1.1; }
+.sb-slot .nm { font-size: 8.5px; letter-spacing: .04em; white-space: nowrap; }
+.sb-slot.full { border-color: rgba(98, 242, 166, .35); }
+.sb-slot.sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; color: var(--ink); }
+.sb-mods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sb-mod {
+  position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 6px;
+  align-items: center; text-align: left; padding: 7px 8px; border-radius: 9px; cursor: pointer;
+  background: rgba(20, 34, 52, .7); border: 1px solid rgba(140, 200, 240, .18); color: var(--ink);
+}
+.sb-mod .ic { grid-row: span 2; font-size: 20px; }
+.sb-mod .nm { font-size: 10.5px; }
+.sb-mod .ct { font-size: 10px; font-family: var(--font-h); }
+.sb-mod .kc { position: absolute; top: 3px; right: 4px; margin: 0; opacity: .6; }
+.sb-mod .have { position: absolute; bottom: 4px; right: 6px; font-size: 9px; color: var(--green, #62f2a6); }
+.sb-mod.sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+.sb-mod[data-nofit] { opacity: .42; }
+.sb-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+.sb-desc { flex: 1 1 260px; line-height: 1.45; }
+.sb-keys { margin-top: 6px; }
+.touch-mode .sb-keys, .touch-mode .sb-mod .kc { display: none; }
+/* while building, the flight controls step aside */
+.station-building .hud-actions, .station-building .throttle-ui, .station-building .stick-zone,
+.station-building .throttle-pad { display: none !important; }
+@media (max-width: 640px) {
+  .sb-slots { grid-template-columns: repeat(4, 1fr); }
+  .sb-mods { grid-template-columns: repeat(2, 1fr); }
+  .station-builder { max-height: 62vh; }
+}
+
+/* freighter under attack */
+.convoy-chip {
+  position: absolute; left: 50%; top: calc(168px + var(--safe-t)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; z-index: 6;
+  background: rgba(40, 18, 10, .82); border: 1px solid rgba(255, 179, 71, .55); color: #ffd9a8;
+  font-size: 11px; letter-spacing: .04em; animation: convoy-pulse 1.2s ease-in-out infinite;
+}
+.convoy-chip i { width: 70px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .15); overflow: hidden; }
+.convoy-chip em { display: block; height: 100%; background: linear-gradient(90deg, #ff6a3d, #ffd36b); }
+@keyframes convoy-pulse { 50% { box-shadow: 0 0 18px rgba(255, 140, 60, .45); } }
