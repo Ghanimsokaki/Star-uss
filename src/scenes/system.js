@@ -611,7 +611,8 @@ export class SystemScene {
     const group = buildEnemy(def.id || def.kind, this.quality);
     group.position.copy(pos);
     group.lookAt(this.player.position);
-    const bubble = shieldBubble((def.id === 'voidlord' ? 9 : def.id === 'cube' ? 5 : def.id === 'warbird' ? 5 : 3.2) * 1.25, new THREE.Color(def.colors.glow).getHex());
+    // the shield bubble fits each hull: big ships get big bubbles
+    const bubble = shieldBubble(Math.max(4, (group.userData.radius || 3) * 1.3), new THREE.Color(def.colors.glow).getHex());
     group.add(bubble);
     this.shipRoot.add(group);
     const e = {
@@ -1654,7 +1655,7 @@ export class SystemScene {
     if (enemy.dead) return;
     enemy.dead = true;
     const pos = enemy.group.position.clone();
-    const size = enemy.kind === 'voidlord' ? 4.4 : enemy.kind === 'cube' ? 3.4 : enemy.kind === 'warbird' ? 2.6 : 1.4;
+    const size = enemy.kind === 'voidlord' ? 4.4 : enemy.kind === 'cube' ? 3.4 : Math.max(1.2, Math.min(3, (enemy.radius || 2.5) * 0.6));
     this._explosion(pos, size * 0.6, enemy.def.colors.glow || '#ffb066');
     this._wreck(enemy, size);
     // kill streak: chain kills inside the window for a growing multiplier

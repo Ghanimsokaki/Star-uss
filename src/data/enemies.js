@@ -75,6 +75,80 @@ export const ENEMIES = {
     colors: { hull: '#1c1426', trim: '#0a0710', glow: '#b47bff' },
     lore: 'Obsidian-hulled hunters from beyond the event horizon. Their weapons do not burn; they erase. Starfleet Science has catalogued exactly four encounters, none with survivors.',
   },
+  orion: {
+    id: 'orion',
+    name: 'Orion Interceptor',
+    faction: 'Orion Syndicate',
+    icon: '💚',
+    tier: 1,
+    hp: 240, shield: 70, regen: 5,
+    dmg: 8, fireRate: 1.15, speed: 76, turn: 2.3,
+    reward: { credits: 160, dilithium: 7, xp: 26 },
+    colors: { hull: '#3f6b3a', trim: '#1f3a1d', glow: '#9dff6a' },
+    lore: 'Small, fast and cheap. Syndicate pilots swarm in, fire, and dart away before you can lock on. Hit them while they turn.',
+  },
+  vorcha: {
+    id: 'vorcha',
+    name: "Vor'cha-class Attack Cruiser",
+    faction: 'Klingon Empire',
+    icon: '🗡️',
+    tier: 3,
+    hp: 1300, shield: 720, regen: 15,
+    dmg: 27, fireRate: 0.95, speed: 46, turn: 1.0,
+    reward: { credits: 600, dilithium: 28, xp: 95 },
+    colors: { hull: '#5d6650', trim: '#2b3126', glow: '#ff5a3d' },
+    lore: 'A Klingon cruiser with a long neck and a big forward disruptor. Slower than a Bird-of-Prey, but it hits much harder and takes a beating.',
+  },
+  jemhadar: {
+    id: 'jemhadar',
+    name: "Jem'Hadar Attack Ship",
+    faction: 'The Dominion',
+    icon: '🪲',
+    tier: 3,
+    hp: 900, shield: 520, regen: 12,
+    dmg: 30, fireRate: 1.25, speed: 68, turn: 1.8,
+    reward: { credits: 560, dilithium: 26, xp: 90 },
+    colors: { hull: '#6b6f86', trim: '#33364a', glow: '#b48cff' },
+    lore: 'Beetle-shaped Dominion fighters with purple phased polaron beams that cut through shields. They never retreat and they attack in packs.',
+  },
+  hunter: {
+    id: 'hunter',
+    name: 'Hirogen Venatic Hunter',
+    faction: 'Hirogen Hunters',
+    icon: '🎯',
+    tier: 4,
+    hp: 1800, shield: 950, regen: 18,
+    dmg: 31, fireRate: 1.0, speed: 58, turn: 1.15,
+    reward: { credits: 820, dilithium: 36, xp: 130 },
+    colors: { hull: '#5b5f63', trim: '#2a2d30', glow: '#ff3b30' },
+    lore: 'Hirogen hunt for sport. Their long, forked ships track prey across whole sectors and only stop when the hunt is over.',
+  },
+  sphere: {
+    id: 'sphere',
+    name: 'Borg Sphere',
+    faction: 'Borg Collective',
+    icon: '🟢',
+    tier: 5,
+    hp: 4200, shield: 2000, regen: 45,
+    dmg: 44, fireRate: 0.75, speed: 34, turn: 0.6,
+    reward: { credits: 2000, dilithium: 80, xp: 320 },
+    colors: { hull: '#3a3f42', trim: '#1a1d1f', glow: '#7dff9a' },
+    adapt: true,
+    lore: 'A smaller Borg scout ship, still bigger than most starships. Its shields learn your weapons just like a Cube does.',
+  },
+  wraith: {
+    id: 'wraith',
+    name: 'Void Wraith',
+    faction: 'The Void',
+    icon: '👻',
+    tier: 6,
+    hp: 3000, shield: 1800, regen: 32,
+    dmg: 38, fireRate: 1.4, speed: 82, turn: 2.1,
+    reward: { credits: 1800, dilithium: 110, xp: 360 },
+    colors: { hull: '#1a1224', trim: '#0a0710', glow: '#e07bff' },
+    cloak: 0.3,
+    lore: 'A crescent of black glass that flickers in and out of sight. Wraiths hunt in pairs ahead of the larger Void ships.',
+  },
   voidlord: {
     id: 'voidlord',
     name: 'Void Dreadnought "The Silence"',
@@ -119,12 +193,14 @@ export function fleetForSystem(system, rng) {
   const threat = system.threat || 1;
   const faction = system.faction || 'neutral';
   const pool = [];
-  if (faction === 'klingon') pool.push('bop', 'bop', 'raider');
-  else if (faction === 'romulan') pool.push('warbird', 'bop');
-  else if (faction === 'cardassian') pool.push('galor', 'raider');
-  else if (faction === 'borg') pool.push('cube');
-  else if (faction === 'void') pool.push('void', 'void', 'voidlord');
-  else pool.push('raider', 'raider');
+  // stronger ships only turn up where the threat level is high enough
+  const add = (kind, n = 1, minThreat = 1) => { if (threat >= minThreat) for (let i = 0; i < n; i++) pool.push(kind); };
+  if (faction === 'klingon') { add('bop', 2); add('raider'); add('vorcha', 2, 3); }
+  else if (faction === 'romulan') { add('warbird', 2); add('bop'); add('hunter', 1, 5); }
+  else if (faction === 'cardassian') { add('galor', 2); add('raider'); add('jemhadar', 2, 3); }
+  else if (faction === 'borg') { add('cube'); add('sphere', 2); }
+  else if (faction === 'void') { add('void', 2); add('wraith', 2); add('voidlord'); }
+  else { add('raider', 2); add('orion', 2); add('hunter', 1, 4); }
 
   const count = Math.min(4, 1 + Math.floor(threat / 2) + (rng.chance(0.35) ? 1 : 0));
   const fleet = [];

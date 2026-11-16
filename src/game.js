@@ -60,7 +60,7 @@ export function newGameState(seed = 'alpha') {
     techs: [],
     missionsDone: [],
     contractsDone: [],
-    stats: { kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, met: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
+    stats: { killsBy: {}, elites: 0, kills: 0, planets: 0, systems: 1, anomalies: 0, landings: 0, finds: 0, met: 0, creditsEarned: 0, warps: 0, deaths: 0, boss: 0 },
     // autoFire is OFF: the weapons are the player's to pull. It stays a settings
     // toggle for anyone who wants the old hands-free behaviour.
     settings: { quality: 'auto', autoPerf: true, showFps: false, muted: false, autoFire: false, aimAssist: true, invertY: false, controls: 'auto', hudHidden: false },
@@ -665,6 +665,10 @@ export class Game {
     this.state.dilithium += r.dilithium;
     this.state.stats.creditsEarned += r.credits;
     this.state.stats.kills++;
+    // which kinds of ship the captain has beaten (missions and contracts ask for these)
+    const kb = this.state.stats.killsBy = { ...(this.state.stats.killsBy || {}) };
+    if (enemy.kind) kb[enemy.kind] = (kb[enemy.kind] || 0) + 1;
+    if (enemy.elite) this.state.stats.elites = (this.state.stats.elites || 0) + 1;
     this.shipRecord.kills = (this.shipRecord.kills || 0) + 1;
     this.addXp(r.xp);
     if (enemy.kind === 'voidlord') {

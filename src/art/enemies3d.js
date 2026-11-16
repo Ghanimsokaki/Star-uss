@@ -4,7 +4,7 @@ import { hullTextures, glowTexture } from './textures.js';
 import { ENEMIES } from '../data/enemies.js';
 
 function materials(def, quality = 1) {
-  const tex = hullTextures(def.id === 'void' || def.id === 'voidlord' ? 'section31' : def.id === 'cube' ? 'section31' : 'starfleet', quality > 0.6 ? 1 : 0);
+  const tex = hullTextures(['void', 'voidlord', 'wraith'].includes(def.id) ? 'section31' : 'starfleet', quality > 0.6 ? 1 : 0);
   // the colour tables are paint swatches; under a real star the plating reads
   // lighter, so lift each colour's lightness (keeping its hue) for the hull
   const lift = (hex, k, min) => {
@@ -12,7 +12,7 @@ function materials(def, quality = 1) {
     const hsl = c.getHSL({});
     return c.setHSL(hsl.h, hsl.s, Math.min(0.62, Math.max(min, hsl.l * k)));
   };
-  const dark = def.id === 'void' || def.id === 'voidlord';
+  const dark = ['void', 'voidlord', 'wraith'].includes(def.id);
   const hull = new THREE.MeshStandardMaterial({
     color: dark ? lift(def.colors.hull, 1.5, 0.12) : lift(def.colors.hull, 1.7, 0.34),
     map: tex.map,
@@ -42,7 +42,6 @@ function buildRaider(def, quality) {
   const g = new THREE.Group();
 
   const hull = new THREE.Mesh(bodyLathe(2.6, 0.42, { segments: 28, front: 0.55, back: 0.5 }), m.hull);
-  hull.rotation.x = Math.PI / 2;
   g.add(hull);
   const pod = new THREE.Mesh(roundedBox(1.8, 0.34, 0.9, 0.12), m.trim);
   pod.position.set(0, 0.16, -0.4);
@@ -76,7 +75,6 @@ function buildBop(def, quality) {
   const g = new THREE.Group();
 
   const fuselage = new THREE.Mesh(bodyLathe(2.4, 0.38, { segments: 26, front: 0.5, back: 0.55 }), m.hull);
-  fuselage.rotation.x = Math.PI / 2;
   fuselage.position.set(0, 0.12, -0.4);
   g.add(fuselage);
 
@@ -158,7 +156,6 @@ function buildGalor(def, quality) {
     pylon.rotation.z = s * 0.22;
     g.add(pylon);
     const pod = new THREE.Mesh(bodyLathe(2.0, 0.22, { segments: 20, front: 0.6, back: 0.5 }), m.hull);
-    pod.rotation.x = Math.PI / 2;
     pod.position.set(s * 1.5, -0.24, -0.1);
     g.add(pod);
     const glow = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.9, 4, 10), m.glow);
@@ -188,7 +185,6 @@ function buildWarbird(def, quality) {
 
   // central "beak" hull
   const core = new THREE.Mesh(bodyLathe(4.6, 0.62, { segments: 30, front: 0.25, back: 0.5 }), win);
-  core.rotation.x = Math.PI / 2;
   g.add(core);
   // command section
   const cmd = new THREE.Mesh(roundedBox(1.6, 0.5, 2.0, 0.2), m.hull);
@@ -326,11 +322,156 @@ function buildVoidlord(def, quality) {
   return { group: g, engines: [{ pos: new THREE.Vector3(0, 0, -6) }], radius: 9, materials: m, spin: 0.02 };
 }
 
-const BUILDERS = { raider: buildRaider, bop: buildBop, galor: buildGalor, warbird: buildWarbird, cube: buildCube, void: buildVoid, voidlord: buildVoidlord };
+/* ---------------------------------------------------------------- new contacts */
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const place = (mesh, x, y, z, rx = 0, ry = 0, rz = 0) => { mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, rz); return mesh; };
+
+/** Orion Interceptor: a slim green dart with two pods and big engines. */
+function buildOrion(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  g.add(place(new THREE.Mesh(bodyLathe(2.4, 0.3, { segments: 24, front: 0.35, back: 0.6 }), m.hull), 0, 0, 0.1));
+  for (const sx of [-1, 1]) {
+    g.add(place(new THREE.Mesh(extrudeProfile([[0, 0.25], [0.9, -0.05], [0.95, -0.35], [0.1, -0.2]], 0.08, 0.03), m.trim), sx * 0.25, 0, -0.1, 0, 0, sx * -0.18));
+    const pod = place(new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 1.1, 4, 10), m.hull), sx * 1.15, -0.08, -0.25, Math.PI / 2);
+    g.add(pod);
+    g.add(place(new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), m.glow), sx * 1.15, -0.08, -0.95, 0, Math.PI));
+  }
+  const canopy = place(new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), m.glowSoft), 0, 0.2, 0.75);
+  canopy.scale.set(1, 0.55, 1.8);
+  g.add(canopy);
+  g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.08), m.glow), 0, 0, -1.1));
+  greeble(g, m.trim, 8, [1.0, 0.3, 1.4]);
+  return { group: g, engines: [{ pos: V3(-1.15, -0.08, -1.0) }, { pos: V3(1.15, -0.08, -1.0) }, { pos: V3(0, 0, -1.15) }], radius: 1.8, materials: m };
+}
+
+/** Vor'cha: a long neck with a heavy disruptor head, swept wings and low nacelles. */
+function buildVorcha(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  // aft body
+  g.add(place(new THREE.Mesh(roundedBox(2.4, 0.6, 2.2, 0.2), m.hull), 0, 0, -1.4));
+  for (const sx of [-1, 1]) {
+    g.add(place(new THREE.Mesh(extrudeProfile([[0, 0.6], [2.2, 0.0], [2.4, -0.9], [0, -1.0]], 0.18, 0.05), m.hull), sx * 0.9, -0.05, -1.1, 0, 0, sx * -0.08));
+    const nac = place(new THREE.Mesh(bodyLathe(2.6, 0.24, { segments: 18, front: 0.6, back: 0.6 }), m.trim), sx * 2.7, -0.45, -1.6);
+    g.add(nac);
+    g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 2.0), m.glow), sx * 2.7, -0.2, -1.6));
+    // wingtip disruptors
+    g.add(place(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.9, 8), m.trim), sx * 3.2, -0.3, -0.5, Math.PI / 2));
+  }
+  // the neck and the head
+  g.add(place(new THREE.Mesh(roundedBox(0.55, 0.42, 2.6, 0.12), m.hull), 0, 0.1, 1.1, -0.06));
+  const head = place(new THREE.Mesh(bodyLathe(1.5, 0.55, { segments: 22, front: 0.7, back: 0.5 }), m.hull), 0, 0.18, 2.9);
+  head.scale.set(1.2, 1, 0.7);
+  g.add(head);
+  g.add(place(new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), m.glow), 0, 0.12, 3.68));
+  g.add(place(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.16, 0.1), m.glow), 0, 0.05, -2.52));
+  greeble(g, m.trim, 22, [2.6, 0.5, 4.2]);
+  return { group: g, engines: [{ pos: V3(0, 0.05, -2.6) }], radius: 3.8, materials: m };
+}
+
+/** Jem'Hadar Attack Ship: a beetle with forward prongs and a purple glow. */
+function buildJemhadar(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  const shell = place(new THREE.Mesh(new THREE.SphereGeometry(1.2, 28, 16), m.hull), 0, 0, -0.2);
+  shell.scale.set(1.25, 0.42, 1.55);
+  g.add(shell);
+  // ridged back plates
+  for (let i = 0; i < 5; i++) {
+    const r = place(new THREE.Mesh(new THREE.TorusGeometry(0.9 - i * 0.08, 0.04, 6, 30, Math.PI), m.trim), 0, 0.2, -1.2 + i * 0.45, 0, 0, 0);
+    r.scale.set(1.3, 0.55, 1);
+    g.add(r);
+  }
+  for (const sx of [-1, 1]) {
+    // forward prongs
+    const prong = place(new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.9, 8), m.hull), sx * 0.75, -0.05, 1.7, Math.PI / 2, 0, sx * 0.05);
+    g.add(prong);
+    g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.2), m.glow), sx * 0.75, 0.06, 1.4));
+    // side engine pods with purple glow
+    g.add(place(new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.2, 4, 10), m.trim), sx * 1.5, -0.1, -0.5, Math.PI / 2));
+    g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 1.1), m.glow), sx * 1.72, -0.1, -0.5));
+  }
+  g.add(place(new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), m.glowSoft), 0, -0.05, 1.3));
+  g.add(place(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.18, 0.1), m.glow), 0, 0, -2.05));
+  greeble(g, m.trim, 14, [1.4, 0.35, 1.6]);
+  return { group: g, engines: [{ pos: V3(0, 0, -2.1) }], radius: 2.4, materials: m };
+}
+
+/** Hirogen Venatic Hunter: a long angular hull that splits into a fork at the front. */
+function buildHunter(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  g.add(place(new THREE.Mesh(roundedBox(1.3, 0.7, 4.2, 0.15), m.hull), 0, 0, -1.2));
+  for (const sx of [-1, 1]) {
+    // the fork
+    g.add(place(new THREE.Mesh(roundedBox(0.45, 0.5, 3.4, 0.1), m.hull), sx * 0.75, 0, 2.2, 0, sx * -0.08));
+    g.add(place(new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.9, 4), m.trim), sx * 0.9, 0, 4.1, Math.PI / 2, 0, Math.PI / 4));
+    g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 2.4), m.glow), sx * 1.0, 0.1, 2.2));
+    // angular side plates and engines
+    g.add(place(new THREE.Mesh(extrudeProfile([[0, 0.4], [1.6, 0.1], [1.7, -0.4], [0, -0.35]], 0.12, 0.04), m.trim), sx * 0.6, 0, -2.2, 0, 0, sx * -0.25));
+    g.add(place(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 1.4, 8), m.trim), sx * 1.4, -0.25, -3.0, Math.PI / 2));
+    g.add(place(new THREE.Mesh(new THREE.CircleGeometry(0.26, 10), m.glow), sx * 1.4, -0.25, -3.72, 0, Math.PI));
+  }
+  g.add(place(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.3), m.glowSoft), 0, 0.38, 0.6));
+  greeble(g, m.trim, 24, [1.2, 0.5, 3.6]);
+  return { group: g, engines: [{ pos: V3(-1.4, -0.25, -3.8) }, { pos: V3(1.4, -0.25, -3.8) }], radius: 4.2, materials: m };
+}
+
+/** Borg Sphere: a greebled ball, cut with green circuitry. */
+function buildSphere(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  const R = 3.2;
+  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(R, 3), m.hull));
+  const n = 70;
+  for (let i = 0; i < n; i++) {
+    // even spread over the surface (golden spiral)
+    const y = 1 - (i / (n - 1)) * 2, rr = Math.sqrt(1 - y * y), a = i * 2.39996;
+    const dir = V3(Math.cos(a) * rr, y, Math.sin(a) * rr);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.5 + Math.random() * 0.9, 0.3 + Math.random() * 0.7, 0.2), i % 5 ? m.trim : m.hull);
+    box.position.copy(dir).multiplyScalar(R + 0.06);
+    box.lookAt(dir.clone().multiplyScalar(10));
+    g.add(box);
+  }
+  for (let i = 0; i < 5; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.04, 0.035, 4, 64), m.glow);
+    ring.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+    g.add(ring);
+  }
+  g.add(place(new THREE.Mesh(new THREE.CircleGeometry(0.8, 20), m.glowSoft), 0, 0, R + 0.1));
+  return { group: g, engines: [], radius: 3.6, materials: m, spin: 0.08 };
+}
+
+/** Void Wraith: a crescent blade of black glass with a burning edge. */
+function buildWraith(def, quality) {
+  const m = materials(def, quality);
+  const g = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.32, 8, 40, Math.PI * 1.2), m.hull);
+  blade.rotation.set(Math.PI / 2, 0, Math.PI * 0.4 + Math.PI / 2);
+  blade.scale.set(1, 1, 0.45);
+  g.add(blade);
+  const edge = new THREE.Mesh(new THREE.TorusGeometry(2.32, 0.05, 4, 40, Math.PI * 1.2), m.glow);
+  edge.rotation.copy(blade.rotation);
+  g.add(edge);
+  const core = place(new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), m.hull), 0, 0, -1.2);
+  core.scale.set(1, 0.6, 1.6);
+  g.add(core);
+  const heart = place(new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), m.glowSoft), 0, 0, -1.2);
+  heart.scale.set(1, 0.6, 1.6);
+  g.add(heart);
+  for (const sx of [-1, 1]) g.add(place(new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.6, 4), m.hull), sx * 0.7, 0, -2.2, -Math.PI / 2));
+  return { group: g, engines: [{ pos: V3(0, 0, -2.4) }], radius: 2.6, materials: m };
+}
+
+const BUILDERS = {
+  raider: buildRaider, bop: buildBop, galor: buildGalor, warbird: buildWarbird, cube: buildCube, void: buildVoid, voidlord: buildVoidlord,
+  orion: buildOrion, vorcha: buildVorcha, jemhadar: buildJemhadar, hunter: buildHunter, sphere: buildSphere, wraith: buildWraith,
+};
 
 /* ------------------------------------------------------------ realism details */
 /** Window light colour per hull: warm cabin light, tinted toward each faction. */
-const WINDOW_TINT = { raider: '#ffd9a0', bop: '#ff9a5a', galor: '#ffd27a', warbird: '#9dffb8', cube: '#7dff9a', void: '#c9a6ff', voidlord: '#c9a6ff' };
+const WINDOW_TINT = { orion: '#c8ffa0', vorcha: '#ff9a5a', jemhadar: '#d6b8ff', hunter: '#ffb08a', sphere: '#7dff9a', wraith: '#e0a6ff', raider: '#ffd9a0', bop: '#ff9a5a', galor: '#ffd27a', warbird: '#9dffb8', cube: '#7dff9a', void: '#c9a6ff', voidlord: '#c9a6ff' };
 
 const spotCache = new Map();
 /**

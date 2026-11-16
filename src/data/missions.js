@@ -3,6 +3,10 @@
  * Only the first unfinished mission is active. `check(state, game)` decides when it
  * is done; optional `progress(state, game)` returns [current, target] for the UI.
  */
+/** How many ships of these kinds the captain has destroyed. */
+export const killsOf = (s, ...kinds) => kinds.reduce((n, k) => n + (s.stats?.killsBy?.[k] || 0), 0);
+const kindsBeaten = (s) => Object.values(s.stats?.killsBy || {}).filter((n) => n > 0).length;
+
 export const MISSIONS = [
   {
     id: 'm-district',
@@ -65,6 +69,15 @@ export const MISSIONS = [
     reward: { credits: 3200, dilithium: 25 },
     check: (s) => s.stats.kills >= 2,
     progress: (s) => [s.stats.kills, 2],
+  },
+  {
+    id: 'm-pirates',
+    title: 'Pirate Trouble',
+    desc: 'Orion Interceptors are raiding cargo ships near home. Destroy three of them.',
+    hint: 'They are small, fast and green. Hit them while they turn. Sol and nearby systems.',
+    reward: { credits: 3600, dilithium: 30 },
+    check: (s) => killsOf(s, 'orion') >= 3,
+    progress: (s) => [Math.min(3, killsOf(s, 'orion')), 3],
   },
   {
     id: 'm-prospect',
@@ -147,6 +160,33 @@ export const MISSIONS = [
     progress: (s, g) => [factionsVisited(s, g), 4],
   },
   {
+    id: 'm-honour',
+    title: 'A Matter of Honour',
+    desc: 'A Klingon captain has challenged you. Defeat a Vor\u2019cha-class Attack Cruiser in Klingon space.',
+    hint: 'Galaxy map → any red Klingon system. Shields up, it hits hard!',
+    reward: { credits: 7000, dilithium: 50, research: 150 },
+    check: (s) => killsOf(s, 'vorcha') >= 1,
+    progress: (s) => [Math.min(1, killsOf(s, 'vorcha')), 1],
+  },
+  {
+    id: 'm-dominion',
+    title: 'The Dominion Arrives',
+    desc: 'Jem\u2019Hadar Attack Ships are helping the Cardassians. Destroy three of them.',
+    hint: 'Galaxy map → yellow Cardassian systems. They come in packs, so keep moving.',
+    reward: { credits: 9000, dilithium: 60, research: 200 },
+    check: (s) => killsOf(s, 'jemhadar') >= 3,
+    progress: (s) => [Math.min(3, killsOf(s, 'jemhadar')), 3],
+  },
+  {
+    id: 'm-elite',
+    title: 'Ace Hunter',
+    desc: 'Destroy an Elite enemy ship: they are tougher, hit harder and pay double.',
+    hint: 'Elite ships have "Elite" in their name. Higher threat systems have more of them.',
+    reward: { credits: 8000, research: 250 },
+    check: (s) => (s.stats.elites || 0) >= 1,
+    progress: (s) => [Math.min(1, s.stats.elites || 0), 1],
+  },
+  {
     id: 'm-rank',
     title: 'Command Presence',
     desc: 'Earn a promotion to the rank of Commander.',
@@ -174,6 +214,24 @@ export const MISSIONS = [
     check: (s) => s.ownedShips.some((id) => ['constitution', 'akira', 'defiant', 'sovereign', 'prometheus'].includes(id)),
   },
   {
+    id: 'm-hunted',
+    title: 'The Hunters Become the Hunted',
+    desc: 'A Hirogen Venatic Hunter is stalking Federation ships. Find it and destroy it.',
+    hint: 'Hirogen hunt in dangerous neutral and Federation systems (threat 4 or more) and deep in Romulan space.',
+    reward: { credits: 12000, dilithium: 70, research: 300 },
+    check: (s) => killsOf(s, 'hunter') >= 1,
+    progress: (s) => [Math.min(1, killsOf(s, 'hunter')), 1],
+  },
+  {
+    id: 'm-sphere',
+    title: 'Scout of the Collective',
+    desc: 'A Borg Sphere is scouting ahead of the Cube. Destroy it before it learns too much.',
+    hint: 'Borg space (green, threat 8). Its shields adapt, so switch between phasers and torpedoes!',
+    reward: { credits: 20000, dilithium: 120, research: 500 },
+    check: (s) => killsOf(s, 'sphere', 'cube') >= 1,
+    progress: (s) => [Math.min(1, killsOf(s, 'sphere', 'cube')), 1],
+  },
+  {
     id: 'm-blackhole',
     title: 'The Black Cluster',
     desc: 'Travel to the Black Cluster and face what waits there.',
@@ -189,6 +247,15 @@ export const MISSIONS = [
     reward: { credits: 12000, dilithium: 100 },
     check: (s) => (s.techs || []).includes('singularity'),
     progress: (s) => [(s.techs || []).includes('singularity') ? 1 : 0, 1],
+  },
+  {
+    id: 'm-wraiths',
+    title: 'Shadows at the Edge',
+    desc: 'Void Wraiths guard the way to the Singularity. Destroy two of them.',
+    hint: 'Vela Singularity. Wraiths are fast and can turn invisible, so watch for them decloaking.',
+    reward: { credits: 18000, dilithium: 150, research: 600 },
+    check: (s) => killsOf(s, 'wraith') >= 2,
+    progress: (s) => [Math.min(2, killsOf(s, 'wraith')), 2],
   },
   {
     id: 'm-boss',
@@ -262,6 +329,16 @@ export const CONTRACTS = [
   { id: 'c-streak', title: 'Unstoppable', desc: 'Reach a 5-kill streak in one battle.', reward: { credits: 10000, dilithium: 60 }, ...count((s) => s.stats.bestStreak || 0, 5) },
   { id: 'c-phoenix', title: 'Phoenix', desc: 'Lose a ship in battle — and come back for more.', reward: { credits: 3000, research: 100 }, ...count((s) => s.stats.deaths || 0, 1) },
   { id: 'c-diplomat', title: 'Galactic Diplomat', desc: 'Visit systems held by six different powers.', reward: { credits: 16000, research: 500 }, ...count((s, g) => factionsVisited(s, g), 6) },
+  { id: 'c-orion-bounty', title: 'Syndicate Bounty', desc: 'Destroy 10 Orion Interceptors.', reward: { credits: 7000, dilithium: 40 }, ...count((s) => killsOf(s, 'orion'), 10) },
+  { id: 'c-klingon', title: 'Blood Oath', desc: 'Destroy 6 Klingon ships (Birds-of-Prey or Vor\u2019chas).', reward: { credits: 12000, dilithium: 70 }, ...count((s) => killsOf(s, 'bop', 'vorcha'), 6) },
+  { id: 'c-cardassian', title: 'Border Patrol', desc: 'Destroy 6 Cardassian or Dominion ships.', reward: { credits: 14000, research: 300 }, ...count((s) => killsOf(s, 'galor', 'jemhadar'), 6) },
+  { id: 'c-romulan', title: 'Cloak and Dagger', desc: 'Destroy 3 Romulan Warbirds.', reward: { credits: 18000, research: 450 }, ...count((s) => killsOf(s, 'warbird'), 3) },
+  { id: 'c-hirogen', title: 'Trophy Room', desc: 'Destroy 3 Hirogen Hunters.', reward: { credits: 20000, dilithium: 120 }, ...count((s) => killsOf(s, 'hunter'), 3) },
+  { id: 'c-borg', title: 'Resistance Is Not Futile', desc: 'Destroy 3 Borg ships (Spheres or Cubes).', reward: { credits: 40000, research: 1000 }, ...count((s) => killsOf(s, 'sphere', 'cube'), 3) },
+  { id: 'c-void', title: 'Into the Dark', desc: 'Destroy 6 Void ships (Reavers or Wraiths).', reward: { credits: 36000, dilithium: 300 }, ...count((s) => killsOf(s, 'void', 'wraith'), 6) },
+  { id: 'c-elite', title: 'Elite Squadron', desc: 'Destroy 5 Elite enemy ships.', reward: { credits: 22000, research: 500 }, ...count((s) => s.stats.elites || 0, 5) },
+  { id: 'c-know-enemy', title: 'Know Your Enemy', desc: 'Destroy 8 different kinds of enemy ship.', reward: { credits: 25000, research: 800, dilithium: 100 }, ...count((s) => kindsBeaten(s), 8) },
+  { id: 'c-legend', title: 'Living Legend', desc: 'Destroy 100 hostile ships.', reward: { credits: 60000, research: 1500, dilithium: 250 }, ...count((s) => s.stats.kills, 100) },
   { id: 'c-tycoon', title: 'Tycoon', desc: 'Earn ₡250,000 over your career.', reward: { research: 1200, dilithium: 120 }, ...count((s) => Math.floor(s.stats.creditsEarned || 0), 250000) },
 ];
 
