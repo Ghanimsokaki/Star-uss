@@ -66,11 +66,11 @@ class App {
       <div class="view-controls" id="view-controls">
         <button class="vc-btn cam-btn" id="cam-btn" type="button" aria-pressed="false"
                 title="Free camera — orbit the ship (O). Drag to orbit, wheel/pinch to zoom.">
-          <span class="ico">◎</span><span class="lbl">CAM</span>
+          <span class="ico">◎</span><span class="lbl">CAM</span><span class="kc">O</span>
         </button>
         <button class="vc-btn ui-btn" id="ui-toggle" type="button" aria-pressed="false"
                 title="Hide every panel for a clean view (U)">
-          <span class="ico">❑</span><span class="lbl">HIDE UI</span>
+          <span class="ico">❑</span><span class="lbl">HIDE UI</span><span class="kc">U</span>
         </button>
       </div>`);
     document.body.appendChild(this.viewControls);

@@ -112,6 +112,6 @@ export function situation(game, app) {
     m ? `Current orders: ${m.title} — ${m.desc} Hint: ${m.hint}` : 'All story missions complete.',
     broken.length ? `Damaged systems: ${broken.join(', ')}. Repairs: press I to go below decks and hold E at the sparking station, or dock at the Shipyard.` : 'All ship systems green.',
     `Resources: ${Math.round(s.credits)} credits, ${Math.round(s.dilithium)} dilithium, ${Math.round(s.research)} research.`,
-    'Controls: W/S thrust, A/D turn, Space/Shift up/down, K or click fire, F torpedo, P autopilot, T warp, L land, R scan, ? for all controls.',
+    'Controls: W/S nose up/down, A/D turn, Space speed up, Shift slow down, K or click fire, F torpedo, P autopilot, T warp, L land, R scan, ? for all controls.',
   ].join(' ');
 }

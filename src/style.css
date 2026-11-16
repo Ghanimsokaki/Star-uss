@@ -1270,3 +1270,7 @@ body.below-decks .view-controls { display: none; }
 .is-mobile.portrait.touch-mode .throttle-pad { bottom: calc(196px + var(--safe-b)); }
 .is-mobile:not(.portrait).touch-mode .throttle-pad { right: calc(82px + var(--safe-r)); top: calc(124px + var(--safe-t)); bottom: auto; }
 .is-mobile:not(.portrait).touch-mode .throttle-ui { max-height: 140px; }
+
+/* keyboard hints on the CAM / HIDE UI buttons (not on touch, where there is no keyboard) */
+.vc-btn .kc { margin-left: 2px; opacity: .6; }
+.touch-mode .vc-btn .kc { display: none; }

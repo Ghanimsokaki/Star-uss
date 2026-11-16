@@ -12,7 +12,7 @@ import { PLANET_TYPES as PT, STAR_LABEL } from '../data/galaxy.js';
 import { audio } from '../core/audio.js';
 import { device, isTouchScheme, onDeviceChange } from '../core/device.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
-import { applyHelm, bankFor, assistFor } from '../core/helm.js';
+import { flyHelm, bankFor, assistFor } from '../core/helm.js';
 import { FreeCam } from '../core/freecam.js';
 import { OrbitChase, chaseOffset } from '../core/orbitcam.js';
 import { stepFlight, massFor, collideSphere, autopilotControls } from '../core/flight.js';
@@ -48,7 +48,7 @@ export class SystemScene {
     this.vel = new THREE.Vector3();   // real velocity — see core/flight.js
     this.autopilot = null;            // { kind, label } while engaged
     this.boosting = false;
-    // cruise speed 0..1 (Z / C, the touch rail). Keyboard pilots fly on W, so
+    // cruise speed 0..1 (Space / Shift, Z / C, the touch strip). Keyboard pilots start stopped, so
     // cruise starts at zero there; touch has no W key and starts cruising.
     this.throttle = isTouchScheme() ? 0.6 : 0;
     this.fireCd = 0;
@@ -659,7 +659,7 @@ export class SystemScene {
               <div class="row between"><span class="small" style="letter-spacing:.06em">${escapeHtml(sys.name)}</span><span class="chip ${sys.threat >= 5 ? 'red' : sys.threat >= 3 ? 'amber' : 'green'}" style="padding:2px 7px;font-size:9px">${g.difficultyLabelFor(sys)}</span></div>
               <div class="row between" style="margin-top:6px">
                 <span class="tiny faint" id="enemy-count"></span>
-                <button class="btn sm ghost" id="leave-btn" style="min-height:26px;padding:4px 8px;font-size:9px">Galaxy map</button>
+                <button class="btn sm ghost" id="leave-btn" title="Galaxy map (G)" style="min-height:26px;padding:4px 8px;font-size:9px">Galaxy map <span class="kbd">G</span></button>
               </div>
             </div>
             <div class="vitals damage-panel" id="damage-panel" hidden>
@@ -734,16 +734,16 @@ export class SystemScene {
             <div class="lbl">CRUISE</div>
           </div>
           <div class="lift-pad" id="lift-pad">
-            <button class="thr-btn" data-action="up" data-hold="1" title="Climb (Space)"><span>⤒</span></button>
-            <button class="thr-btn fwd" data-action="thrust" data-hold="1" title="Forward thrust (W)"><span>W</span></button>
-            <button class="thr-btn" data-action="reverse" data-hold="1" title="Reverse (S)"><span>S</span></button>
-            <button class="thr-btn" data-action="down" data-hold="1" title="Descend (Shift)"><span>⤓</span></button>
+            <button class="thr-btn" data-action="up" data-hold="1" title="Climb (Page Up)"><span>⤒</span></button>
+            <button class="thr-btn fwd" data-action="thrust" data-hold="1" title="Speed up (Space)"><span>▲</span></button>
+            <button class="thr-btn" data-action="reverse" data-hold="1" title="Slow down / back up (Shift)"><span>▼</span></button>
+            <button class="thr-btn" data-action="down" data-hold="1" title="Descend (Page Down)"><span>⤓</span></button>
           </div>
           <div class="throttle-pad" id="throttle-pad">
-            <button class="thr-btn up" data-action="throttleUp" data-hold="1" title="More impulse power"><span>▲</span></button>
+            <button class="thr-btn up" data-action="throttleUp" data-hold="1" title="Speed up (Space)"><span>▲</span></button>
             <div class="thr-read" id="thr-read">72%</div>
-            <button class="thr-btn down" data-action="throttleDown" data-hold="1" title="Less impulse power"><span>▼</span></button>
-            <button class="thr-btn brake" data-action="brake" data-hold="0" title="All stop"><span>■</span></button>
+            <button class="thr-btn down" data-action="throttleDown" data-hold="1" title="Slow down (Shift)"><span>▼</span></button>
+            <button class="thr-btn brake" data-action="brake" data-hold="0" title="All stop (X)"><span>■</span></button>
           </div>
           <div class="touch-hint" id="touch-hint">Left: drag to steer · Right: drag to look</div>
           <div class="globe-labels" id="obj-labels"></div>
@@ -775,7 +775,7 @@ export class SystemScene {
     this._logEl = $('#syslog', this.ui);
     this.logLines = [];
     this.addLog(`Entering ${sys.name} — ${STAR_LABEL[sys.star] || 'stellar body'}`, 'good');
-    this.addLog(isTouchScheme() ? 'Drag left side to steer · W/S pads for thrust · AUTO flies for you' : 'W/S thrust · A/D turn · Space/Shift up/down · click or K fires · P autopilot', '');
+    this.addLog(isTouchScheme() ? 'Drag to steer · drag the speed strip for speed · AUTO flies for you' : 'W/S nose up/down · A/D turn · Space faster · Shift slower · click or K fires · P autopilot', '');
     this._updateHud(true);
   }
 
@@ -875,8 +875,8 @@ export class SystemScene {
     // manual = a key, stick, thumb or a mouse that is MOVING — a cursor merely
     // resting off-centre (e.g. on the AUTO button) must not cancel autopilot
     const k = input.keys;
-    const steering = ['a', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].some((x) => k.has(x)) || input.stick.active || (input.mouseActive && input.mouseIdle < 0.15 && (Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25));
-    const manual = steering || input.thrust !== 0 || input.lift !== 0;
+    const steering = ['w', 'a', 's', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].some((x) => k.has(x)) || input.stick.active || (input.mouseActive && input.mouseIdle < 0.15 && (Math.abs(input.rawSteer.x) > 0.25 || Math.abs(input.rawSteer.y) > 0.25));
+    const manual = steering || input.throttleRate !== 0 || input.lift !== 0;
     let ap = null;
     if (this.autopilot) {
       if (manual) this._toggleAutopilot(false, 'Manual control');
@@ -887,17 +887,23 @@ export class SystemScene {
     const steerX = clamp(inSteerX + assistX * (1 - Math.min(1, Math.abs(inSteerX))), -1, 1);
     const steerY = clamp(inSteerY + assistY * (1 - Math.min(1, Math.abs(inSteerY))), -1, 1);
 
-    // steer.x = +1 is starboard; core/helm.js owns the yaw sign (and normalises)
-    applyHelm(this.player.quaternion, { x: steerX, y: steerY }, {
+    // plane-style helm (core/helm.js): turns and tips the nose, never rolls or
+    // loops over, and eases back to level when you let go of up/down
+    flyHelm(this.player.quaternion, { x: steerX, y: steerY }, {
       turn,
       dt,
       invertY: this.game.state.settings.invertY === true,
+      level: ap ? 0 : 1,
     });
 
-    // --- impulse throttle: hold Z / the ▲ pad, or C / ▼. X is all-stop.
+    // --- speed: hold Space (or Z / ▲) to go faster, Shift (or C / ▼) to slow down.
+    // Keep holding Shift once stopped and the ship backs up. X is all-stop.
+    let reverse = 0;
     if (input.throttleRate) {
-      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.5 : 0.62), 0, 1);
-    }
+      this._autoReverseHold = input.throttleRate < 0 && this.throttle <= 0 ? (this._autoReverseHold || 0) + dt : 0;
+      this.throttle = clamp(this.throttle + input.throttleRate * dt * (isTouchScheme() ? 0.55 : 0.75), 0, 1);
+      if (this._autoReverseHold > 0.25) reverse = -0.6;   // backing up is gentle
+    } else this._autoReverseHold = 0;
     let braking = false;
     if (input.consume('brake')) {
       this.throttle = 0;
@@ -917,7 +923,7 @@ export class SystemScene {
     const sprint = this.speedBoostTimer > 0 ? 1.45 : 1;
     // --- physics: engines push a real velocity; momentum carries through turns
     stepFlight(this.vel, this.player.quaternion, {
-      thrust: ap ? ap.thrust : input.thrust,
+      thrust: ap ? ap.thrust : reverse,
       lift: ap ? 0 : input.lift,
       cruise: ap ? 0 : this.throttle,
       boost: boosting,

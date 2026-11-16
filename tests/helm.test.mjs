@@ -134,3 +134,52 @@ function angleTo(hull, target) {
   const toT = target.clone().sub(hull.position).normalize();
   return Math.acos(Math.min(1, Math.max(-1, nose.dot(toT))));
 }
+
+/* ------------------------------------------------------------ flyHelm */
+import { flyHelm, headingOf, MAX_PITCH } from '../src/core/helm.js';
+
+const fly = (steer, seconds, opts = {}) => {
+  const q = new THREE.Quaternion();
+  for (let t = 0; t < seconds; t += 1 / 60) flyHelm(q, steer, { turn: 2.2, dt: 1 / 60, ...opts });
+  return q;
+};
+const rollOf = (q) => {
+  // how far the hull's up vector leans sideways from the world-up plane
+  const up = V(0, 1, 0).applyQuaternion(q), right = V(1, 0, 0).applyQuaternion(q);
+  return Math.abs(right.y) + Math.abs(up.x * 0);
+};
+
+test('flyHelm: W (+y) lifts the nose, S lowers it, D turns starboard', () => {
+  assert.ok(headingOf(fly({ x: 0, y: 1 }, 0.4)).pitch > 0.2);
+  assert.ok(headingOf(fly({ x: 0, y: -1 }, 0.4)).pitch < -0.2);
+  const nose = V(0, 0, 1).applyQuaternion(fly({ x: 1, y: 0 }, 0.4));
+  assert.ok(nose.x < -0.1, 'starboard is local -X');
+});
+
+test('flyHelm: holding W can never loop the ship over (the "flies up forever" bug)', () => {
+  const q = fly({ x: 0, y: 1 }, 10);
+  const { pitch } = headingOf(q);
+  assert.ok(pitch <= MAX_PITCH + 1e-6 && pitch > MAX_PITCH - 0.05, `pitch ${pitch}`);
+  const up = V(0, 1, 0).applyQuaternion(q);
+  assert.ok(up.y > 0, 'never upside down');
+});
+
+test('flyHelm: let go and the nose comes back to level', () => {
+  const q = fly({ x: 0, y: 1 }, 1);
+  for (let t = 0; t < 4; t += 1 / 60) flyHelm(q, { x: 0, y: 0 }, { turn: 2.2, dt: 1 / 60 });
+  assert.ok(Math.abs(headingOf(q).pitch) < 0.03);
+});
+
+test('flyHelm: turning while climbing never rolls the hull', () => {
+  const q = new THREE.Quaternion();
+  for (let t = 0; t < 6; t += 1 / 60) flyHelm(q, { x: Math.sin(t * 3), y: Math.cos(t * 2) }, { turn: 2.2, dt: 1 / 60 });
+  assert.ok(rollOf(q) < 1e-6, 'hull right vector stays level');
+});
+
+test('flyHelm: invert pitch flips only the nose, and level 0 holds the pitch', () => {
+  assert.ok(headingOf(fly({ x: 0, y: 1 }, 0.4, { invertY: true })).pitch < -0.2);
+  const q = fly({ x: 0, y: 1 }, 0.4, { level: 0 });
+  const p0 = headingOf(q).pitch;
+  for (let t = 0; t < 2; t += 1 / 60) flyHelm(q, { x: 0, y: 0 }, { turn: 2.2, dt: 1 / 60, level: 0 });
+  assert.ok(Math.abs(headingOf(q).pitch - p0) < 1e-6);
+});
