@@ -1,24 +1,32 @@
 import * as THREE from 'three';
-import { bodyLathe, roundedBox, extrudeProfile, greeble } from './ships3d.js';
+import { bodyLathe, roundedBox, extrudeProfile, greeble, bakeStaticMeshes } from './ships3d.js';
 import { hullTextures, glowTexture } from './textures.js';
 import { ENEMIES } from '../data/enemies.js';
 
 function materials(def, quality = 1) {
   const tex = hullTextures(def.id === 'void' || def.id === 'voidlord' ? 'section31' : def.id === 'cube' ? 'section31' : 'starfleet', quality > 0.6 ? 1 : 0);
+  // the colour tables are paint swatches; under a real star the plating reads
+  // lighter, so lift each colour's lightness (keeping its hue) for the hull
+  const lift = (hex, k, min) => {
+    const c = new THREE.Color(hex);
+    const hsl = c.getHSL({});
+    return c.setHSL(hsl.h, hsl.s, Math.min(0.62, Math.max(min, hsl.l * k)));
+  };
+  const dark = def.id === 'void' || def.id === 'voidlord';
   const hull = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(def.colors.hull),
+    color: dark ? lift(def.colors.hull, 1.5, 0.12) : lift(def.colors.hull, 1.7, 0.34),
     map: tex.map,
     roughnessMap: tex.roughnessMap,
     bumpMap: tex.bumpMap,
     bumpScale: 0.02,
-    metalness: def.id === 'void' || def.id === 'voidlord' ? 0.92 : 0.6,
-    roughness: def.id === 'cube' ? 0.62 : 0.44,
-    envMapIntensity: 1.1,
+    metalness: dark ? 0.9 : 0.42,
+    roughness: dark ? 0.26 : def.id === 'cube' ? 0.6 : 0.46,
+    envMapIntensity: dark ? 1.6 : 1.1,
   });
   const trim = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(def.colors.trim),
-    metalness: 0.8,
-    roughness: 0.4,
+    color: dark ? lift(def.colors.trim, 1.5, 0.08) : lift(def.colors.trim, 1.8, 0.2),
+    metalness: 0.7,
+    roughness: 0.38,
     map: tex.map,
   });
   const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(def.colors.glow).multiplyScalar(1.5), toneMapped: false, side: THREE.DoubleSide });
@@ -312,29 +320,137 @@ function buildVoidlord(def, quality) {
     ring.rotation.x = Math.PI / 2 + i * 0.3;
     ring.rotation.z = i * 0.5;
     g.add(ring);
-    base.group.userData.rings = base.group.userData.rings || [];
-    base.group.userData.rings.push(ring);
+    g.userData.rings = g.userData.rings || [];
+    g.userData.rings.push(ring);
   }
   return { group: g, engines: [{ pos: new THREE.Vector3(0, 0, -6) }], radius: 9, materials: m, spin: 0.02 };
 }
 
 const BUILDERS = { raider: buildRaider, bop: buildBop, galor: buildGalor, warbird: buildWarbird, cube: buildCube, void: buildVoid, voidlord: buildVoidlord };
 
+/* ------------------------------------------------------------ realism details */
+/** Window light colour per hull: warm cabin light, tinted toward each faction. */
+const WINDOW_TINT = { raider: '#ffd9a0', bop: '#ff9a5a', galor: '#ffd27a', warbird: '#9dffb8', cube: '#7dff9a', void: '#c9a6ff', voidlord: '#c9a6ff' };
+
+const spotCache = new Map();
+/**
+ * Find places on the outer hull to put lit windows: cast rays at the model
+ * from all around and keep the hits on hull plating. Cached per ship kind,
+ * so it only runs once for each kind of enemy.
+ */
+function windowSpots(kind, group, hullMats, count, rng) {
+  if (spotCache.has(kind)) return spotCache.get(kind);
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const reach = size.length();
+  const targets = [];
+  group.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && hullMats.has(o.material)) targets.push(o); });
+  const ray = new THREE.Raycaster();
+  const spots = [];
+  const n = new THREE.Vector3();
+  for (let tries = 0; tries < count * 5 && spots.length < count; tries++) {
+    // mostly from the sides and above, where real ships have their decks
+    const a = rng() * Math.PI * 2;
+    const elev = (rng() - 0.35) * 1.1;
+    const dir = new THREE.Vector3(Math.cos(a), elev, Math.sin(a)).normalize();
+    const along = (rng() - 0.5) * size.z * 0.8;
+    const from = center.clone().addScaledVector(dir, reach);
+    from.z += along;
+    const to = center.clone(); to.z += along; to.y += (rng() - 0.5) * size.y * 0.3;
+    ray.set(from, to.sub(from).normalize());
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit?.face) continue;
+    n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    if (Math.abs(n.y) > 0.8) continue;            // windows look out sideways, not up
+    spots.push({ p: hit.point.clone().addScaledVector(n, 0.012), n: n.clone() });
+  }
+  spotCache.set(kind, spots);
+  return spots;
+}
+
+function addWindows(kind, group, m, def, quality) {
+  if (quality < 0.45) return null;
+  const rng = (() => { let h = 0; for (const c of kind) h = (h * 31 + c.charCodeAt(0)) >>> 0; return () => ((h = (h * 1664525 + 1013904223) >>> 0) / 4294967296); })();
+  const spots = windowSpots(kind, group, new Set([m.hull, m.trim]), kind === 'cube' ? 90 : kind === 'voidlord' ? 70 : 46, rng);
+  if (!spots.length) return null;
+  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(WINDOW_TINT[kind] || '#ffd9a0').multiplyScalar(1.15), toneMapped: false });
+  const geo = new THREE.PlaneGeometry(0.075, 0.035);
+  const mesh = new THREE.InstancedMesh(geo, mat, spots.length);
+  const o = new THREE.Object3D();
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  spots.forEach((s, i) => {
+    o.position.copy(s.p).applyMatrix4(inv);
+    o.lookAt(o.position.clone().add(s.n));
+    o.scale.setScalar(0.8 + rng() * 0.6);
+    o.updateMatrix();
+    mesh.setMatrixAt(i, o.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.name = 'windows';
+  group.add(mesh);
+  return mat;
+}
+
+/**
+ * Navigation lights like a real spacecraft: red to port, green to
+ * starboard, and a white anti-collision strobe on top that blinks.
+ */
+function addNavLights(group, radius) {
+  const box = new THREE.Box3().setFromObject(group);
+  const lights = [];
+  const make = (color, x, y, z, size, strobe) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(color), color: new THREE.Color(color).multiplyScalar(1.6), transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    }));
+    s.position.set(x, y, z);
+    s.scale.setScalar(size);
+    s.userData = { base: size, strobe, phase: Math.random() * 3 };
+    group.add(s);
+    lights.push(s);
+  };
+  const r = Math.max(0.3, radius * 0.12);
+  make('#ff3b30', box.min.x * 0.96, (box.min.y + box.max.y) / 2, box.min.z * 0.15, r, false);
+  make('#34ff6a', box.max.x * 0.96, (box.min.y + box.max.y) / 2, box.min.z * 0.15, r, false);
+  make('#ffffff', 0, box.max.y * 0.98, box.min.z * 0.6, r * 1.3, true);
+  return lights;
+}
+
+/** Blink the nav lights. Call every frame with the scene time. */
+export function updateNavLights(group, t) {
+  for (const s of group.userData.navLights || []) {
+    const { base, strobe, phase } = s.userData;
+    const on = strobe ? ((t + phase) % 1.4) < 0.09 : 0.75 + 0.25 * Math.sin((t + phase) * 2);
+    s.scale.setScalar(base * (strobe ? (on ? 2.4 : 0.001) : on));
+  }
+}
+
 export function buildEnemy(kind, quality = 1) {
   const def = ENEMIES[kind] || ENEMIES.raider;
   const build = BUILDERS[kind] || BUILDERS.raider;
   const built = build(def, quality);
-  built.group.name = `enemy-${kind}`;
-  built.group.userData = {
-    ...built.group.userData,
+  const group = built.group;
+  // the voidlord's rings and spinning parts stay separate so they can move
+  for (const r of group.userData.rings || []) r.userData.keep = true;
+  if (built.ring) built.ring.userData.keep = true;
+  bakeStaticMeshes(group);
+  const windowMat = addWindows(kind, group, built.materials, def, quality);
+  const navLights = addNavLights(group, built.radius);
+  group.name = `enemy-${kind}`;
+  group.userData = {
+    ...group.userData,
     kind,
     def,
     engines: built.engines,
     radius: built.radius,
     materials: built.materials,
-    glowMats: [built.materials.glow, built.materials.glowSoft],
+    glowMats: [built.materials.glow, built.materials.glowSoft, windowMat].filter(Boolean),
+    navLights,
+    spin: built.spin || 0,
   };
-  return built.group;
+  return group;
 }
 
 /** A glowing shield bubble used when hits land. */

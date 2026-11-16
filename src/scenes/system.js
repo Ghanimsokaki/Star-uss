@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildShip, disposeObject3D, makeShipMaterials, saucerGeometry, roundedBox, bodyLathe } from '../art/ships3d.js';
 import { onModelLoaded, loadGLB } from '../art/imported.js';
-import { buildEnemy, shieldBubble } from '../art/enemies3d.js';
+import { buildEnemy, shieldBubble, updateNavLights } from '../art/enemies3d.js';
 import { makeSky, makeStars, makeStar, makePlanet, makeStation, makeAsteroids, glowSprite } from '../art/environment.js';
 import { BlackHole } from '../art/blackhole.js';
 import { EarthGlobe, EARTH_RADIUS } from '../art/earth.js';
@@ -173,6 +173,10 @@ export class SystemScene {
       disposeObject3D(e.group);
     });
     this.enemies = [];
+    for (const w of this.wrecks || []) { this.shipRoot.remove(w.group); disposeObject3D(w.group); }
+    this.wrecks = [];
+    for (const c of this.debris || []) { this.fxRoot.remove(c.mesh); c.mesh.geometry.dispose(); }
+    this.debris = [];
     this.projectiles.forEach((p) => this._removeProjectile(p));
     this.projectiles = [];
     this.effects.forEach((e) => { this.fxRoot.remove(e.obj); });
@@ -1651,11 +1655,8 @@ export class SystemScene {
     enemy.dead = true;
     const pos = enemy.group.position.clone();
     const size = enemy.kind === 'voidlord' ? 4.4 : enemy.kind === 'cube' ? 3.4 : enemy.kind === 'warbird' ? 2.6 : 1.4;
-    this._explosion(pos, size, enemy.def.colors.glow || '#ffb066');
-    setTimeout(() => {
-      this.shipRoot.remove(enemy.group);
-      disposeObject3D(enemy.group);
-    }, 60);
+    this._explosion(pos, size * 0.6, enemy.def.colors.glow || '#ffb066');
+    this._wreck(enemy, size);
     // kill streak: chain kills inside the window for a growing multiplier
     this.combo = this.combo && this.combo.timer > 0 ? { count: this.combo.count + 1, timer: 10 } : { count: 1, timer: 10 };
     const mult = 1 + Math.min(this.combo.count - 1, 6) * 0.25;
@@ -1671,6 +1672,113 @@ export class SystemScene {
     this._refreshMissionLine();
     if (this._aliveEnemies().length === 0) this._onSystemCleared();
     if (enemy.kind === 'voidlord') this._onBossDefeated();
+  }
+
+  /**
+   * How an enemy looks right now: blinking nav lights, spinning parts, and
+   * the damage it has taken — smoke and sparks venting from the hull, flickering
+   * engines and a wounded ship listing off its course.
+   */
+  _enemyLooks(e, dt) {
+    const g = e.group;
+    updateNavLights(g, this.time);
+    const spin = g.userData.spin;
+    if (spin) for (const r of g.userData.rings || g.children[0]?.userData.rings || []) r.rotation.z += dt * spin * 20;
+    const hurt = e.maxHp > 0 ? 1 - Math.max(0, e.hp) / e.maxHp : 0;
+    if (!(hurt >= 0.25) || e.cloaked) { if (e._list) { g.rotation.z -= e._list; e._list = 0; } return; }
+    if (!this._smoke) this._initDamageFx();
+    const r = e.radius;
+    if (Math.random() < (hurt - 0.2) * 20 * dt) {
+      // a random spot on the hull, pushed out along the hull's surface
+      const local = V((Math.random() - 0.5) * r, (Math.random() - 0.3) * r * 0.35, (Math.random() - 0.5) * r * 1.2);
+      const p = local.applyMatrix4(g.matrixWorld);
+      const out = local.clone().normalize();
+      this._emit(this._smoke, p, out.clone().multiplyScalar(1.5 + Math.random()), 1.4 + hurt * 1.6);
+      if (Math.random() < 0.55) this._emit(this._sparks, p, out.multiplyScalar(5 + Math.random() * 5), 0.3 + Math.random() * 0.3);
+    }
+    // engines sputter, and a badly hurt ship rolls off level
+    const glow = g.userData.materials?.glow;
+    if (glow) {
+      if (!glow.userData.base) glow.userData.base = glow.color.clone();
+      const flick = hurt > 0.6 && Math.random() < 0.12 ? 0.25 : 1;
+      glow.color.copy(glow.userData.base).multiplyScalar(flick * (1 - hurt * 0.35));
+    }
+    const list = Math.sin(this.time * 1.3 + e.phase) * 0.18 * Math.max(0, hurt - 0.5);
+    g.rotation.z += list - (e._list || 0);
+    e._list = list;
+  }
+
+  /**
+   * A destroyed ship doesn't just vanish: the dead hulk tumbles on, venting and
+   * breaking up, with pieces of hull flying off, until its core goes up.
+   */
+  _wreck(enemy, size) {
+    const g = enemy.group;
+    enemy.bubble.visible = false;
+    for (const s of g.userData.navLights || []) s.visible = false;
+    const m = g.userData.materials;
+    if (m?.glow) m.glow.color.multiplyScalar(0.15);
+    if (m?.glowSoft) m.glowSoft.opacity = 0.05;
+    if (m?.hull?.color) m.hull.color.multiplyScalar(0.55);      // scorched
+    for (const wm of g.userData.glowMats || []) if (wm !== m?.glow && wm !== m?.glowSoft && wm.color) wm.color.multiplyScalar(0.1);
+    const fwd = V(0, 0, 1).applyQuaternion(g.quaternion);
+    const axis = V(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    this.wrecks = this.wrecks || [];
+    const life = 1.4 + Math.min(2.2, size * 0.45);
+    this.wrecks.push({ group: g, vel: fwd.multiplyScalar(8 + Math.random() * 8), axis, rate: 0.8 + Math.random() * 1.4, life, max: life, blast: 0.25, size, color: enemy.def.colors.glow || '#ffb066' });
+    // chunks of hull plating thrown clear
+    this.debris = this.debris || [];
+    const n = Math.round((4 + size * 3) * (0.5 + this.quality * 0.5));
+    for (let i = 0; i < n; i++) {
+      const s = (0.18 + Math.random() * 0.5) * Math.min(2.4, size);
+      const geo = new THREE.TetrahedronGeometry(s, 0);
+      geo.scale(1 + Math.random(), 0.25 + Math.random() * 0.4, 1 + Math.random());
+      const chunk = new THREE.Mesh(geo, m?.hull || new THREE.MeshStandardMaterial({ color: '#555' }));
+      chunk.position.copy(g.position).add(V((Math.random() - 0.5) * enemy.radius, (Math.random() - 0.5) * enemy.radius * 0.5, (Math.random() - 0.5) * enemy.radius));
+      this.fxRoot.add(chunk);
+      const v = chunk.position.clone().sub(g.position).normalize().multiplyScalar(6 + Math.random() * 18).add(V(0, Math.random() * 3, 0));
+      this.debris.push({ mesh: chunk, vel: v, spin: V(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3), life: 3 + Math.random() * 3, max: 6 });
+    }
+  }
+
+  _updateWrecks(dt) {
+    const ws = this.wrecks;
+    if (ws?.length) {
+      for (let i = ws.length - 1; i >= 0; i--) {
+        const w = ws[i];
+        w.life -= dt;
+        w.group.position.addScaledVector(w.vel, dt);
+        w.group.rotateOnAxis(w.axis, w.rate * dt);
+        w.rate *= 1 + dt * 0.4;
+        w.blast -= dt;
+        if (w.blast <= 0) {
+          // secondary blasts ripple across the hulk
+          w.blast = 0.18 + Math.random() * 0.35;
+          const r = (w.group.userData.radius || 3);
+          const p = V((Math.random() - 0.5) * r, (Math.random() - 0.5) * r * 0.4, (Math.random() - 0.5) * r).applyMatrix4(w.group.matrixWorld);
+          this._impact(p, Math.random() < 0.5 ? '#ffb066' : w.color);
+          if (this._smoke) for (let k = 0; k < 3; k++) this._emit(this._smoke, p, V(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(4), 2 + Math.random());
+        }
+        if (w.life <= 0) {
+          this._explosion(w.group.position.clone(), w.size, w.color);
+          this.shake = Math.max(this.shake, Math.min(0.8, 4 * w.size / Math.max(30, w.group.position.distanceTo(this.player.position))));
+          this.shipRoot.remove(w.group);
+          disposeObject3D(w.group);
+          ws.splice(i, 1);
+        }
+      }
+    }
+    const ds = this.debris;
+    if (ds?.length) {
+      for (let i = ds.length - 1; i >= 0; i--) {
+        const c = ds[i];
+        c.life -= dt;
+        c.mesh.position.addScaledVector(c.vel, dt);
+        c.mesh.rotation.x += c.spin.x * dt; c.mesh.rotation.y += c.spin.y * dt; c.mesh.rotation.z += c.spin.z * dt;
+        if (c.life < 1) c.mesh.scale.setScalar(Math.max(0.001, c.life));
+        if (c.life <= 0) { this.fxRoot.remove(c.mesh); c.mesh.geometry.dispose(); ds.splice(i, 1); }
+      }
+    }
   }
 
   _damagePlayer(amount, ignoreShield = false) {
@@ -1791,8 +1899,8 @@ export class SystemScene {
       this.fxRoot.add(pts);
       return { pts, n, i: 0, vel: new Float32Array(n * 3), life: new Float32Array(n) };
     };
-    this._smoke = make(160, 2.2, '#8a8f98', false);
-    this._sparks = make(160, 0.55, '#ffb35a', true);
+    this._smoke = make(320, 2.2, '#8a8f98', false);
+    this._sparks = make(320, 0.55, '#ffb35a', true);
   }
 
   _emit(pool, pos, vel, life) {
@@ -2319,6 +2427,7 @@ export class SystemScene {
     for (const e of this.enemies) {
       if (e.dead) continue;
       const pos = e.group.position;
+      this._enemyLooks(e, dt);
       const toPlayer = playerPos.clone().sub(pos);
       const dist = toPlayer.length();
       const dir = toPlayer.clone().normalize();
@@ -2613,6 +2722,7 @@ export class SystemScene {
       // input can leave the scene (land, warp, below decks): stop this frame there
       if (!this.player || this.app.current !== this || this.interior?.active) return;
       this._updateEnemies(capped);
+      this._updateWrecks(capped);
       if (!this._redAlerted) {
         const close = this.enemies.some((e) => !e.dead && e.group.position.distanceTo(this.player.position) < 700);
         if (close) {
