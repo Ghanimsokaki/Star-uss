@@ -399,7 +399,6 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; bord
   box-shadow: 0 0 24px rgba(89,224,255,.25); }
 .touch-mode .stick-zone { display: block; }
 .touch-mode .syslog { bottom: calc(12px + var(--safe-b)); width: 40vw; }
-.touch-mode .throttle-ui { display: none; }
 
 /* ---------------------------------------------------------------- touch pad */
 /* The thumb pad only exists in the touch scheme; the mouse/keyboard HUD hides it. */
@@ -1241,3 +1240,33 @@ body.below-decks .view-controls { display: none; }
 .ai-form input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.35);
   border: 1px solid rgba(89,224,255,.22); color: var(--ink); font-family: var(--font-b); font-size: 14px; }
 .ai-form input:focus { outline: none; border-color: var(--cyan); }
+
+/* ---------- touchpad throttle strip ---------- */
+.throttle-ui { width: 64px; height: 200px; padding: 8px 6px; border-radius: 16px; touch-action: none; cursor: ns-resize;
+  background: rgba(6,12,22,.62); border: 1px solid var(--line); backdrop-filter: blur(10px); gap: 7px; user-select: none; }
+.throttle-ui:hover, .throttle-ui.dragging, .throttle-ui:focus-visible { border-color: rgba(255,179,71,.6); }
+.throttle-ui .ts-read { text-align: center; line-height: 1.1; }
+.throttle-ui .ts-read b { display: block; font-family: var(--font-h); font-size: 13px; color: var(--amber); }
+.throttle-ui .ts-read span { font-size: 8.5px; color: var(--ink-faint); letter-spacing: .06em; white-space: nowrap; }
+.throttle-ui .track { width: 26px; border-radius: 13px; background: rgba(255,255,255,.07); overflow: visible; }
+.throttle-ui .track i { border-radius: 13px; opacity: .55; transition: height .08s linear; }
+.throttle-ui .track s { position: absolute; left: 4px; right: 4px; height: 1px; background: rgba(255,255,255,.18); }
+.throttle-ui .track em { position: absolute; left: -5px; right: -5px; height: 2px; margin-bottom: -1px; background: #fff; box-shadow: 0 0 8px #fff; transition: bottom .12s linear; }
+.throttle-ui .ts-knob { position: absolute; left: 50%; width: 34px; height: 14px; margin: 0 0 -7px -17px; border-radius: 7px;
+  background: var(--amber); box-shadow: 0 0 14px rgba(255,179,71,.65); border: 2px solid #fff3e0; transition: bottom .08s linear; }
+.throttle-ui.dragging .ts-knob { transform: scale(1.15); }
+/* touch: the strip replaces the ▲▼ buttons on the right; ■ all-stop stays below it */
+.touch-mode .throttle-ui { display: flex; left: auto; right: calc(12px + var(--safe-r)); bottom: auto; top: 30%; height: 170px; }
+.touch-mode .throttle-pad .thr-btn.up, .touch-mode .throttle-pad .thr-btn.down, .touch-mode .throttle-pad .thr-read { display: none; }
+.touch-mode .throttle-pad { top: auto; bottom: calc(150px + var(--safe-b)); transform: none; right: calc(22px + var(--safe-r)); }
+.is-mobile.portrait .touch-mode .throttle-ui, .is-mobile.portrait.touch-mode .throttle-ui { top: 34%; height: 150px; }
+.is-mobile:not(.portrait).touch-mode .throttle-ui { top: 22%; height: 140px; width: 56px; }
+/* strip placement: clear of the message log (desktop) and the target card (phones) */
+.throttle-ui { bottom: calc(150px + var(--safe-b)); }
+.is-mobile:not(.portrait).touch-mode .throttle-ui { top: calc(124px + var(--safe-t)); bottom: auto; height: 118px; width: 54px; }
+.is-mobile:not(.portrait).touch-mode .throttle-ui .ts-read span { display: none; }
+.is-mobile:not(.portrait).touch-mode .throttle-pad { bottom: calc(86px + var(--safe-b)); right: calc(20px + var(--safe-r)); }
+.is-mobile.portrait.touch-mode .throttle-ui { top: calc(150px + var(--safe-t)); height: 150px; }
+.is-mobile.portrait.touch-mode .throttle-pad { bottom: calc(196px + var(--safe-b)); }
+.is-mobile:not(.portrait).touch-mode .throttle-pad { right: calc(82px + var(--safe-r)); top: calc(124px + var(--safe-t)); bottom: auto; }
+.is-mobile:not(.portrait).touch-mode .throttle-ui { max-height: 140px; }

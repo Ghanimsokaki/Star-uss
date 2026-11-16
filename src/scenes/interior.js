@@ -14,9 +14,70 @@
  */
 import * as THREE from 'three';
 import { SYSTEMS, BROKEN } from '../core/damage.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { canvas as makeCanvas, glowTexture } from '../art/textures.js';
 
+/**
+ * Wall panelling and deck plating, drawn once. 1 texture repeat = 2 m.
+ * Returns colour + bump maps so the seams catch the light.
+ */
+function surfaceTextures(kind) {
+  const c = makeCanvas(256, 256), b = makeCanvas(256, 256);
+  const g = c.getContext('2d'), gb = b.getContext('2d');
+  let seed = kind === 'wall' ? 11 : 23;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  gb.fillStyle = '#808080'; gb.fillRect(0, 0, 256, 256);
+  if (kind === 'wall') {
+    // tall beige panels with dark seams and a darker waist band
+    g.fillStyle = '#d6cfc2'; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 2; i++) {
+      const x = i * 128;
+      const grad = g.createLinearGradient(x, 0, x + 128, 0);
+      grad.addColorStop(0, '#cfc7b9'); grad.addColorStop(0.5, '#ddd6ca'); grad.addColorStop(1, '#c9c1b2');
+      g.fillStyle = grad; g.fillRect(x + 3, 0, 122, 256);
+      g.fillStyle = '#7d7466'; g.fillRect(x, 0, 3, 256);
+      gb.fillStyle = '#303030'; gb.fillRect(x, 0, 3, 256);
+    }
+    g.fillStyle = '#8f8576'; g.fillRect(0, 170, 256, 14);
+    gb.fillStyle = '#a0a0a0'; gb.fillRect(0, 170, 256, 14);
+    g.fillStyle = '#6d6457'; g.fillRect(0, 168, 256, 2); g.fillRect(0, 184, 256, 2);
+  } else {
+    // deck plating: brushed grey-blue squares with seams and wear
+    g.fillStyle = '#2f3644'; g.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+      g.fillStyle = `hsl(220, 14%, ${20 + rnd() * 5}%)`;
+      g.fillRect(x * 128 + 2, y * 128 + 2, 124, 124);
+    }
+    for (let i = 0; i < 900; i++) {
+      g.fillStyle = `rgba(255,255,255,${rnd() * 0.035})`;
+      g.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 6, 1);
+    }
+    g.fillStyle = '#151922';
+    g.fillRect(0, 0, 256, 2); g.fillRect(0, 128, 256, 2); g.fillRect(0, 0, 2, 256); g.fillRect(128, 0, 2, 256);
+    gb.fillStyle = '#202020';
+    gb.fillRect(0, 0, 256, 2); gb.fillRect(0, 128, 256, 2); gb.fillRect(0, 0, 2, 256); gb.fillRect(128, 0, 2, 256);
+    // little anti-slip studs
+    gb.fillStyle = '#b0b0b0';
+    for (let y = 16; y < 256; y += 32) for (let x = 16; x < 256; x += 32) gb.fillRect(x, y, 3, 3);
+  }
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const bump = new THREE.CanvasTexture(b);
+  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
+  return { map, bump };
+}
+
+/** Scale a geometry's UVs so its texture repeats every `unit` metres. */
+function metreUVs(geo, w, h, unit = 2) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / unit, uv.getY(i) * h / unit);
+  return geo;
+}
+
 const EYE = 1.65;
+const RED = new THREE.Color(0xff2a1a);
+const RED_STRIP = new THREE.Color('#ff3b30').multiplyScalar(1.3);
+const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const RADIUS = 0.35;
 const WALK = 3.2;
 const RUN = 5.6;
@@ -43,7 +104,7 @@ const DOORS = {
   engineering: { axis: 'z', at: -20, c: 0 },
 };
 const DOOR_W = 1.8;
-const ROOM_FOR = { weapons: 'phasers', shields: 'shields', engines: 'engines', sensors: 'sensors', warp: 'engineering' };
+const ROOM_FOR = { weapons: 'phasers', shields: 'shields', engines: 'engines', sensors: 'sensors', warp: 'engineering', structure: 'bridge' };
 
 /** Is this floor point inside the ship (keeping the body radius off the walls)? */
 export function walkable(x, z, r = RADIUS) {
@@ -107,20 +168,24 @@ export class ShipInterior {
   _build() {
     const s = this.scene;
     s.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2f38, 0.9));
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xcfc8bb, roughness: 0.75, metalness: 0.05 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.6 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x2e3442, roughness: 0.95 });
+    const wt = surfaceTextures('wall'), ft = surfaceTextures('floor');
+    // (no bump maps: on some GPUs their derivatives go NaN on edge-on floors and bloom spreads it over the screen)
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xece7de, map: wt.map, roughnessMap: wt.bump, roughness: 0.75, metalness: 0.05 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.42, metalness: 0.35 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: ft.map, roughnessMap: ft.bump, roughness: 0.8, metalness: 0.35 });
     // ceilings face down, away from the sky light: give them a little glow so they aren't black
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.8, emissive: 0x3b3833 });
     const lightMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff4e0').multiplyScalar(1.4), toneMapped: false });
     this._mats = { wallMat, trimMat, floorMat, ceilMat, lightMat };
+    this._lamps = [];
+    this._stripBase = lightMat.color.clone();
     const H = 3;
     const areas = [LAYOUT.corridor, ...LAYOUT.rooms];
 
     for (const a of areas) {
       const w = a.x1 - a.x0, d = a.z1 - a.z0, cx = (a.x0 + a.x1) / 2, cz = (a.z0 + a.z1) / 2;
       const h = a.id === 'engineering' ? 6 : a.id === 'bridge' ? 3.6 : H;
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
+      const floor = new THREE.Mesh(metreUVs(new THREE.PlaneGeometry(w, d), w, d), floorMat);
       floor.rotation.x = -Math.PI / 2; floor.position.set(cx, 0, cz); s.add(floor);
       const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), ceilMat);
       ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, h, cz); s.add(ceil);
@@ -136,6 +201,7 @@ export class ShipInterior {
         const pl = new THREE.PointLight(a.id === 'engineering' ? 0x9fd8ff : 0xffe6c4, a === LAYOUT.corridor ? 9 : 12, Math.max(w, d) * 1.3, 1.6);
         pl.position.set(cx, h - 0.4, lz);
         s.add(pl);
+        this._lamps.push({ light: pl, base: pl.color.clone(), power: pl.intensity });
       }
       // walls with door gaps
       const doorsHere = this._doorsOn(a);
@@ -195,6 +261,9 @@ export class ShipInterior {
       if (s1 - s0 < 0.01) return;
       const len = s1 - s0, mid = (s0 + s1) / 2;
       const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.12, h, alongX ? 0.12 : len), this._mats.wallMat);
+      // wall panels: repeat every 2 m along the wall and keep their height
+      const uv = m.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len / 2, uv.getY(i) * h / 3);
       m.position.set(alongX ? mid : fixed, h / 2, alongX ? fixed : mid);
       this.scene.add(m);
       const base = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.16, 0.18, alongX ? 0.16 : len), this._mats.trimMat);
@@ -305,6 +374,17 @@ export class ShipInterior {
   /* ---------------------------------------------------------------- mode */
   enter() {
     this.active = true;
+    // soft reflections from the room itself, so metal and glass read as metal and glass
+    const r = this.app?.viewport?.renderer;
+    if (!this._envRT && r?.getRenderTarget) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(r);
+        this._envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+        pmrem.dispose();
+        this.scene.environment = this._envRT.texture;
+        this.scene.environmentIntensity = 0.22;
+      } catch (e) { console.warn('[interior] environment failed', e); }
+    }
     this.pos.set(-4.4, 0, 25.4);
     this.yaw = -0.35; this.pitch = 0;   // facing aft, toward the corridor
     this._bindLook();
@@ -389,6 +469,16 @@ export class ShipInterior {
     this.warpCore.mat.color.set(warpOk ? '#59c8ff' : '#ff5a3a').multiplyScalar(warpOk ? 0.8 + pulse * 0.6 : (Math.sin(t * 17) > 0 ? 1.4 : 0.35));
     this.warpCore.light.color.set(warpOk ? 0x59c8ff : 0xff5a3a);
     this.warpCore.light.intensity = warpOk ? 4 + pulse * 3 : 2 + (Math.sin(t * 17) > 0 ? 4 : 0);
+    // red alert: while a system is knocked out, the lights pulse red
+    const alert = Object.values(this.stations).some((st) => dmg[st.sys] < BROKEN);
+    const ra = alert ? 0.55 + Math.sin(t * 3.2) * 0.45 : 0;
+    this._alert = damp1(this._alert || 0, ra, 6, dt);
+    const a = this._alert;
+    for (const L of this._lamps) {
+      L.light.color.copy(L.base).lerp(RED, a * 0.85);
+      L.light.intensity = L.power * (1 - a * 0.35);
+    }
+    this._mats.lightMat.color.copy(this._stripBase).lerp(RED_STRIP, a * 0.8);
     let near = null;
     for (const st of Object.values(this.stations)) {
       const v = dmg[st.sys];
@@ -472,6 +562,8 @@ export class ShipInterior {
 
   dispose() {
     this.exit();
+    this._envRT?.dispose();
+    this._envRT = null;
     this.scene.traverse((o) => {
       o.geometry?.dispose?.();
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.map?.dispose?.(); m.dispose?.(); });

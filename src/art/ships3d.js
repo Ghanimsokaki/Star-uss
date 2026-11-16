@@ -356,6 +356,9 @@ class ShipBuilder {
   saucer({ r, t, y = 0, z = 0, scaleZ = 1, segments = 64 }) {
     const g = new THREE.Group();
     g.position.set(0, y, z);
+    // the primary hull is its own part, so damage can knock it out of line
+    g.userData.part = 'saucer';
+    if (!this.saucerPart) this.saucerPart = g;
     const geo = saucerGeometry(r, t, { segments: this.detail ? segments : Math.round(segments * 0.6), scaleZ });
     const s = new THREE.Mesh(geo, this.mats.hull);
     g.add(s);
@@ -658,9 +661,10 @@ class ShipBuilder {
     const g = new THREE.PlaneGeometry(r * 1.05, r * 0.33);
     const m = new THREE.Mesh(g, this.mats.decal);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(0, y + t * 1.0, z + r * 0.22);
     m.renderOrder = 2;
-    this.group.add(m);
+    // ride on the saucer (local coords) so the name moves with it
+    if (this.saucerPart) { m.position.set(0, t * 1.0, r * 0.22); this.saucerPart.add(m); }
+    else { m.position.set(0, y + t * 1.0, z + r * 0.22); this.group.add(m); }
     return m;
   }
 
@@ -712,8 +716,15 @@ class ShipBuilder {
       const size = new THREE.Vector3(); bounds.getSize(size);
       this.navLights(size.x * 0.44, size.z, bounds.max.y - size.y * 0.28);
     }
+    // merge the saucer's parts among themselves, then keep it separate from the hull
+    for (const part of this.group.children.filter((c) => c.userData.part === 'saucer')) {
+      bakeStaticMeshes(part);
+      part.userData.keep = true;
+      part.userData.rest = { pos: part.position.clone(), rot: part.rotation.clone() };
+    }
     bakeStaticMeshes(this.group);
     this.group.userData = {
+      saucerPart: this.saucerPart || null,
       cls: this.cls,
       phaserMuzzles: this.phaserMuzzles,
       torpMuzzles: this.torpMuzzles,

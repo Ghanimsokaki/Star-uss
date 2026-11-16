@@ -17,6 +17,7 @@ export const SYSTEMS = {
   engines: { id: 'engines', name: 'Impulse Engines', place: 'Deck 9 · aft', room: 'engines', effect: 'Top speed reduced' },
   sensors: { id: 'sensors', name: 'Sensor Array', place: 'Deck 2 · starboard', room: 'sensors', effect: 'Scanners and targeting assist offline' },
   warp: { id: 'warp', name: 'Warp Core', place: 'Main Engineering', room: 'engineering', effect: 'Warp drive offline' },
+  structure: { id: 'structure', name: 'Structural Integrity', place: 'Bridge · saucer connection', room: 'bridge', effect: 'Saucer knocked out of line — the ship turns slower' },
 };
 export const SYSTEM_IDS = Object.keys(SYSTEMS);
 
@@ -98,6 +99,7 @@ export function effects(dmg) {
     regen: d.shields < BROKEN ? 0 : d.shields,
     sensors: d.sensors >= BROKEN,
     warp: d.warp >= BROKEN,
+    turn: scale(d.structure ?? 1),
   };
 }
 
