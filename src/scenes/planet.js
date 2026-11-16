@@ -31,6 +31,7 @@ import { isTouchScheme } from '../core/device.js';
 import { stepVertical, slopeLimited, jumpHeight, AIR_CONTROL } from '../core/walker.js';
 import { hasRealSky, makeRealSky, skyEnvironment, waterNormals } from '../art/realsky.js';
 import { escapeHtml, clamp, damp } from '../core/util.js';
+import { buildCity, pushOutOfSolids, insideSolid } from '../art/city.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const WALK_SPEED = 9.5;
@@ -259,10 +260,24 @@ export class PlanetScene {
     }
 
     // props
-    s.add(buildScatter({
+    const scatter = buildScatter({
       seed: this._seed, type: this.planet.type, count: 110,
       radius: 150, rng: this.rng,
-    }));
+    });
+    s.add(scatter);
+
+    // Earth: the city you have built stands around the pad
+    this.solids = [];
+    this.city = null;
+    if (this.planet.id === 'sol-p2' && this.game.state.civ?.districts?.length) {
+      const groundAt = (x, z) => Math.max(heightAt(x, z, this._seed), b.waterLevel + 0.2);
+      this.city = buildCity(this.game.state.civ.districts, groundAt);
+      s.add(this.city.group);
+      this.solids = this.city.solids;
+      // no trees or boulders growing through the buildings
+      for (const o of [...scatter.children]) if (insideSolid(o.position.x, o.position.z, this.solids, 3)) scatter.remove(o);
+      this._initChimneys();
+    }
 
     this._buildPad();
     this._buildShip();
@@ -281,6 +296,44 @@ export class PlanetScene {
     // drifting motes: dust, snow or spores depending on the world
     this.motes = this._buildMotes();
     s.add(this.motes);
+  }
+
+  /** Smoke from the foundry stacks and steam off the cooling towers. */
+  _initChimneys() {
+    const vents = this.city?.chimneys || [];
+    if (!vents.length) return;
+    const n = 36 * vents.length;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3).fill(-1e4), 3));
+    const tex = glowSprite('#ffffff', 1, 1).material.map;
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 7, map: tex, color: 0xd8dde3, transparent: true, opacity: 0.32, depthWrite: false, sizeAttenuation: true,
+    }));
+    pts.frustumCulled = false;
+    this.scene.add(pts);
+    this._chim = { pts, vents, n, life: new Float32Array(n), i: 0, acc: 0 };
+  }
+
+  _updateChimneys(dt) {
+    const c = this._chim;
+    if (!c) return;
+    c.acc += dt * c.vents.length * 6;
+    const a = c.pts.geometry.attributes.position.array;
+    while (c.acc >= 1) {
+      c.acc -= 1;
+      const v = c.vents[Math.floor(Math.random() * c.vents.length)];
+      const k = c.i = (c.i + 1) % c.n;
+      a[k * 3] = v.pos.x + (Math.random() - 0.5); a[k * 3 + 1] = v.pos.y; a[k * 3 + 2] = v.pos.z + (Math.random() - 0.5);
+      c.life[k] = 6;
+    }
+    for (let k = 0; k < c.n; k++) {
+      if (c.life[k] <= 0) continue;
+      c.life[k] -= dt;
+      a[k * 3] += dt * 1.6;                 // a light breeze
+      a[k * 3 + 1] += dt * (2.2 + (6 - c.life[k]) * 0.2);
+      if (c.life[k] <= 0) a[k * 3 + 1] = -1e4;
+    }
+    c.pts.geometry.attributes.position.needsUpdate = true;
   }
 
   _buildPad() {
@@ -388,6 +441,7 @@ export class PlanetScene {
       const person = buildPerson({ role, type: this.planet.type, rng: this.rng });
       // the first person is close enough to walk up to as soon as you land
       const p = i === 0 ? ringPoint(this.rng, PAD_RADIUS + 9, PAD_RADIUS + 5) : ringPoint(this.rng, 52, PAD_BLEND + 2);
+      pushOutOfSolids(p, this.solids || [], 1.5);
       person.position.set(p.x, heightAt(p.x, p.z, this._seed), p.z);
       person.rotation.y = this.rng() * Math.PI * 2;
 
@@ -418,6 +472,7 @@ export class PlanetScene {
     const count = 3 + Math.floor(this.rng() * 3);
     for (let i = 0; i < count; i++) {
       const p = ringPoint(this.rng, 54, PAD_BLEND + 3);
+      pushOutOfSolids(p, this.solids || [], 2);
       const dep = buildDeposit({
         seed: this._seed, type: this.planet.type, x: p.x, z: p.z, index: i,
       });
@@ -795,9 +850,12 @@ export class PlanetScene {
     for (const d of this.deposits) {
       items.push({ node: d, text: d.userData.name, sub: d.userData.scanned ? 'sampled' : 'deposit', kind: 'deposit' });
     }
+    for (const c of this.city?.labels || []) {
+      items.push({ node: c.node, text: `${c.icon} ${c.name} · L${c.level}`, sub: 'district', kind: 'district', color: c.color, far: 260 });
+    }
     this._labelsEl.innerHTML = items.map((it, i) =>
-      `<div class="globe-label obj-label" data-i="${i}" style="--c:${it.kind === 'deposit' ? '#ffb347' : '#59e0ff'}">
-        <span class="ic">${it.kind === 'deposit' ? '◆' : '☍'}</span>
+      `<div class="globe-label obj-label${it.kind === 'district' ? ' district-label' : ''}" data-i="${i}" style="--c:${it.kind === 'deposit' ? '#ffb347' : it.color || '#59e0ff'}">
+        <span class="ic">${it.kind === 'deposit' ? '◆' : it.kind === 'district' ? '⌂' : '☍'}</span>
         <span class="tx">${escapeHtml(it.text)}</span>
         <span class="lv" data-dist></span>
       </div>`).join('');
@@ -826,7 +884,7 @@ export class PlanetScene {
       }
       el2.style.display = '';
       el2.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
-      el2.style.opacity = clamp(1.15 - dist / 90, 0.15, 1);
+      el2.style.opacity = clamp(1.15 - dist / (l.far || 90), 0.15, 1);
       const dEl = el2.querySelector('[data-dist]');
       if (dEl) dEl.textContent = `${Math.round(dist)} m`;
       el2.classList.toggle('near', dist < TALK_RANGE && l.kind === 'npc');
@@ -859,6 +917,7 @@ export class PlanetScene {
     this._updateLabels();
     this._updatePrompt();
     this._updateMotes(dt);
+    this._updateChimneys(dt);
     void t;
   }
 
@@ -907,6 +966,8 @@ export class PlanetScene {
       (x, z) => heightAt(x, z, this._seed), this.body.grounded);
     this.player.position.x += dx;
     this.player.position.z += dz;
+    // buildings are solid
+    if (this.solids?.length) pushOutOfSolids(this.player.position, this.solids, 0.55);
 
     const jump = this._jumpQueued || input.consume?.('jump');
     this._jumpQueued = false;
@@ -999,6 +1060,7 @@ export class PlanetScene {
       if (d > 0.35) {
         const dir = to.normalize();
         p.position.addScaledVector(dir, u.speed * dt);
+        if (this.solids?.length) pushOutOfSolids(p.position, this.solids, 0.5);
         p.rotation.y = dampAngleLocal(p.rotation.y, Math.atan2(dir.x, dir.z), 5, dt);
       }
     }
@@ -1102,6 +1164,9 @@ export class PlanetScene {
       this.deposits = [];
       this.followers = [];
       this.labels = [];
+      this.city = null;
+      this.solids = [];
+      this._chim = null;
     }
     audio.stopEngine?.();
   }
