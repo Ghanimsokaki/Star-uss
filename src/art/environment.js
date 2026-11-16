@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { nebulaTexture, environmentTexture, starSpriteTexture, glowTexture, planetTexture, cloudTexture, ringTexture, starfield } from './textures.js';
 import { disposeObject3D } from './ships3d.js';
 import { device } from '../core/device.js';
-import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 
 let envMap = null;
 export function getEnvironment(renderer) {
@@ -96,19 +95,86 @@ export function makeStars(count = 2600, radius = 30000) {
 }
 
 /**
- * A camera lens flare: the bright source plus ghost rings along the line
- * through the screen centre, the way real lenses bounce strong light.
+ * A camera lens flare: a soft glow on the star plus faint ghost rings along
+ * the line through the screen centre, the way real lenses bounce strong light.
+ *
+ * Drawn with plain sprites placed in front of the camera every frame. (three's
+ * Lensflare copies the framebuffer to test visibility; with the multisampled
+ * render target that copy fails and its magenta test square was left on
+ * screen — the purple blob over the sun.) Planets block it with a cheap
+ * sphere test instead.
  */
-export function addLensFlare(light, color = '#ffd9a0') {
-  const flare = new Lensflare();
-  const c = new THREE.Color(color);
-  flare.addElement(new LensflareElement(glowTexture('#ffffff'), 520, 0, c));
-  const ring = glowTexture('#9fc8ff');
-  for (const [size, dist, tint] of [[60, 0.35, '#a8d0ff'], [110, 0.55, '#ffd0a0'], [70, 0.75, '#c0a8ff'], [150, 1.0, '#8fd6ff']]) {
-    flare.addElement(new LensflareElement(ring, size, dist, new THREE.Color(tint).multiplyScalar(0.35)));
+export class LensFlare {
+  constructor(color = '#ffd9a0') {
+    this.group = new THREE.Group();
+    this.group.name = 'lens-flare';
+    this.group.renderOrder = 999;
+    this.vis = 0;
+    const mk = (tex, tint, opacity) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, color: new THREE.Color(tint), transparent: true, opacity,
+        blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
+      }));
+      sp.renderOrder = 999;
+      sp.frustumCulled = false;
+      this.group.add(sp);
+      return sp;
+    };
+    const ring = glowTexture('#9fc8ff');
+    // [size in px at 800px tall, position along the flare line (0 = star, 1 = mirrored), tint, strength]
+    this.elements = [
+      { sp: mk(glowTexture('#ffffff'), color, 0.5), size: 260, at: 0, k: 0.5 },
+      ...[[46, 0.4, '#a8d0ff'], [80, 0.62, '#ffd0a0'], [54, 0.8, '#c0a8ff'], [110, 1.05, '#8fd6ff']]
+        .map(([size, at, tint]) => ({ sp: mk(ring, tint, 0.1), size, at, k: 0.1 })),
+    ];
   }
-  light.add(flare);
-  return flare;
+
+  /**
+   * @param {THREE.PerspectiveCamera} camera
+   * @param {THREE.Vector3} starPos  world position of the star
+   * @param {Array<{center:THREE.Vector3, radius:number}>} blockers  planets that can hide it
+   * @param {number} dt
+   */
+  update(camera, starPos, blockers = [], dt = 0.016, viewH = 800) {
+    const ndc = starPos.clone().project(camera);
+    const toStar = starPos.clone().sub(camera.position);
+    const ahead = toStar.dot(camera.getWorldDirection(new THREE.Vector3())) > 0;
+    let visible = ahead && Math.abs(ndc.x) < 1.15 && Math.abs(ndc.y) < 1.15;
+    if (visible) {
+      // a planet between the camera and the star blocks the flare
+      const dir = toStar.clone().normalize();
+      const dist = toStar.length();
+      for (const b of blockers) {
+        const oc = b.center.clone().sub(camera.position);
+        const t = oc.dot(dir);
+        if (t <= 0 || t >= dist) continue;
+        if (oc.lengthSq() - t * t < b.radius * b.radius) { visible = false; break; }
+      }
+    }
+    this.vis += ((visible ? 1 : 0) - this.vis) * (1 - Math.exp(-8 * dt));
+    this.group.visible = this.vis > 0.01;
+    if (!this.group.visible) return;
+    // lay the sprites out on a plane just in front of the camera
+    this.group.position.copy(camera.position);
+    this.group.quaternion.copy(camera.quaternion);
+    const D = 10;
+    const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * D;
+    const halfW = halfH * camera.aspect;
+    const pxToWorld = (2 * halfH) / Math.max(1, viewH) * (viewH / 800);
+    // a star near the middle of the screen flares hardest
+    const centre = 1 - Math.min(1, Math.hypot(ndc.x, ndc.y) / 1.4) * 0.6;
+    for (const e of this.elements) {
+      const x = ndc.x * (1 - 2 * e.at), y = ndc.y * (1 - 2 * e.at);
+      e.sp.position.set(x * halfW, y * halfH, -D);
+      e.sp.scale.setScalar(e.size * pxToWorld);
+      e.sp.material.opacity = e.k * this.vis * centre;
+    }
+  }
+
+  dispose() {
+    this.group.traverse((o) => o.material?.dispose?.());
+    this.group.removeFromParent();
+  }
 }
 
 export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, light = true } = {}) {
@@ -122,12 +188,15 @@ export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, ligh
     map: glowTexture(color), color: new THREE.Color(color), transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
   }));
-  halo.scale.setScalar(radius * 9);
+  halo.material.opacity = 0.6;
+  halo.scale.setScalar(radius * 7);
   g.add(halo);
+  // the wide outer glow used to be 22 star-widths across at 22% — big enough
+  // to tint the whole sky brown even with the sun off screen
   const halo2 = halo.clone();
   halo2.material = halo.material.clone();
-  halo2.material.opacity = 0.22;
-  halo2.scale.setScalar(radius * 22);
+  halo2.material.opacity = 0.1;
+  halo2.scale.setScalar(radius * 12);
   g.add(halo2);
   // surface turbulence
   const surface = new THREE.Mesh(
@@ -140,8 +209,9 @@ export function makeStar({ radius = 60, color = '#ffd9a0', intensity = 2.2, ligh
     const l = new THREE.PointLight(new THREE.Color(color), intensity * 0.62, 0, 0);
     l.position.set(0, 0, 0);
     g.add(l);
-    // the camera's view of a star: lens flare (skipped on low-end devices)
-    if (device.tier !== 'low') g.userData.flare = addLensFlare(l, color);
+    // the camera's view of a star: lens flare (skipped on low-end devices);
+    // the scene adds g.userData.flare.group and calls update() every frame
+    if (device.tier !== 'low') g.userData.flare = new LensFlare(color);
   }
   g.userData.core = core;
   g.userData.halo = halo;

@@ -250,6 +250,7 @@ export class SystemScene {
       star.position.set(0, 0, 0);
       this.systemRoot.add(star);
       this.star = star;
+      if (star.userData.flare) this.systemRoot.add(star.userData.flare.group);
       const bounce = new THREE.PointLight(0x6fa8ff, 1.2, 3200, 2);
       bounce.position.set(200, 120, 200);
       this.systemRoot.add(bounce);
@@ -2641,7 +2642,17 @@ export class SystemScene {
     }
     if (this.station) this.station.rotation.y += dt * 0.04;
     if (this.belt) this.belt.rotation.y += dt * 0.006;
-    if (this.star) this.star.rotation.y += dt * 0.02;
+    if (this.star) {
+      this.star.rotation.y += dt * 0.02;
+      const flare = this.star.userData.flare;
+      if (flare) {
+        this._flareBlockers ??= [];
+        const bl = this._flareBlockers;
+        bl.length = 0;
+        for (const n of this.planetNodes) bl.push({ center: n.node.getWorldPosition(n._wp || (n._wp = V())), radius: n.radius });
+        flare.update(this.camera, this.star.position, bl, dt, this.app.viewport?.height || window.innerHeight);
+      }
+    }
   }
 
   /* ================================================================ HUD */
