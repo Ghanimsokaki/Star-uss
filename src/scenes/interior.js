@@ -43,7 +43,7 @@ const DOORS = {
   engineering: { axis: 'z', at: -20, c: 0 },
 };
 const DOOR_W = 1.8;
-const ROOM_FOR = { weapons: 'phasers', shields: 'shields', engines: 'engines', sensors: 'sensors', warp: 'engineering' };
+const ROOM_FOR = { weapons: 'phasers', shields: 'shields', engines: 'engines', sensors: 'sensors', warp: 'engineering', structure: 'bridge' };
 
 /** Is this floor point inside the ship (keeping the body radius off the walls)? */
 export function walkable(x, z, r = RADIUS) {

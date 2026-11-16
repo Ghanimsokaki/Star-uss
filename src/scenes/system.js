@@ -153,6 +153,8 @@ export class SystemScene {
     document.body.classList.remove('below-decks');
     this.interior?.dispose();
     this.interior = null;
+    for (const pool of [this._smoke, this._sparks]) if (pool) { this.fxRoot.remove(pool.pts); pool.pts.geometry.dispose(); pool.pts.material.dispose(); }
+    this._smoke = this._sparks = null;
     this.loot?.forEach((L) => this.fxRoot.remove(L.g));
     this.loot = [];
     this.combo = null;
@@ -404,6 +406,8 @@ export class SystemScene {
     this.bankRig.add(hull);
     this.player.add(this.bankRig);
     this.hullModel = hull;
+    this._glowBase = null;
+    this._deflBase = undefined;
     this.player.position.set(-260, 96, 560);
     this.player.lookAt(0, 10, 0);
     this.player.rotateY(-0.28);
@@ -468,6 +472,50 @@ export class SystemScene {
     return this.freecam?.toggle() ?? false;
   }
 
+  /**
+   * The cruise-speed strip works like a touchpad: drag anywhere on it (finger,
+   * mouse or trackpad), scroll over it to nudge, double-tap for all stop,
+   * arrow keys when it has focus. Momentum means the ship then catches up.
+   */
+  _bindThrottleStrip(strip) {
+    if (!strip) return;
+    const track = strip.querySelector('.track');
+    const setFrom = (clientY) => {
+      const r = track.getBoundingClientRect();
+      this.throttle = clamp(1 - (clientY - r.top) / Math.max(1, r.height), 0, 1);
+      if (this.throttle < 0.03) this.throttle = 0;
+      this._toggleAutopilot(false);
+      this._updateHud();
+    };
+    let dragging = null, lastTap = 0;
+    strip.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const now = performance.now();
+      if (now - lastTap < 300) { this.throttle = 0; this._allStop = 0.8; toast('All stop', 'warn', 1000); lastTap = 0; this._updateHud(); return; }
+      lastTap = now;
+      dragging = e.pointerId;
+      strip.setPointerCapture?.(e.pointerId);
+      strip.classList.add('dragging');
+      setFrom(e.clientY);
+    });
+    strip.addEventListener('pointermove', (e) => { if (dragging === e.pointerId) setFrom(e.clientY); });
+    const end = (e) => { if (dragging === e.pointerId) { dragging = null; strip.classList.remove('dragging'); } };
+    strip.addEventListener('pointerup', end);
+    strip.addEventListener('pointercancel', end);
+    strip.addEventListener('wheel', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      this.throttle = clamp(this.throttle - Math.sign(e.deltaY) * (Math.abs(e.deltaY) < 30 ? 0.02 : 0.08), 0, 1);
+      this._updateHud();
+    }, { passive: false });
+    strip.addEventListener('keydown', (e) => {
+      const step = { ArrowUp: 0.05, ArrowRight: 0.05, ArrowDown: -0.05, ArrowLeft: -0.05, PageUp: 0.25, PageDown: -0.25 }[e.key];
+      if (step === undefined) return;
+      e.preventDefault(); e.stopPropagation();
+      this.throttle = clamp(this.throttle + step, 0, 1);
+      this._updateHud();
+    });
+  }
+
   /* ================================================================ below decks */
   _toggleInterior(on = !this.interior?.active) {
     if (on === !!this.interior?.active || this.dead) return;
@@ -530,7 +578,7 @@ export class SystemScene {
     const sx = (x) => W / 2 + x * (W / 18);
     const sz = (z) => H - 6 - (z + 32) * ((H - 12) / 60);
     const dmg = this.game.damage;
-    const roomSys = { phasers: 'weapons', shields: 'shields', engines: 'engines', sensors: 'sensors', engineering: 'warp' };
+    const roomSys = { phasers: 'weapons', shields: 'shields', engines: 'engines', sensors: 'sensors', engineering: 'warp', bridge: 'structure' };
     const box = (a, fill) => { g.fillStyle = fill; g.fillRect(sx(a.x0), sz(a.z1), sx(a.x1) - sx(a.x0), sz(a.z0) - sz(a.z1)); };
     box(LAYOUT.corridor, 'rgba(120,160,200,.35)');
     for (const room of LAYOUT.rooms) {
@@ -669,9 +717,16 @@ export class SystemScene {
             <span><b>O</b> free cam</span>
           </div>
           <div class="stick-zone" id="stick"><div class="stick-base"></div><div class="stick-knob" id="stick-knob"></div></div>
-          <div class="throttle-ui" id="throttle-ui">
-            <div class="track"><i id="throttle-fill" style="height:72%"></i></div>
-            <div class="lbl">IMP</div>
+          <div class="throttle-ui" id="throttle-ui" role="slider" tabindex="0" aria-label="Cruise speed" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+               title="Cruise speed — drag, or two-finger scroll over it · double-tap for all stop">
+            <div class="ts-read"><b id="ts-set">0%</b><span id="ts-speed">0 u/s</span></div>
+            <div class="track">
+              <i id="throttle-fill" style="height:0%"></i>
+              <em id="throttle-actual" style="bottom:0%"></em>
+              <span class="ts-knob" id="ts-knob" style="bottom:0%"></span>
+              <s style="bottom:25%"></s><s style="bottom:50%"></s><s style="bottom:75%"></s>
+            </div>
+            <div class="lbl">CRUISE</div>
           </div>
           <div class="lift-pad" id="lift-pad">
             <button class="thr-btn" data-action="up" data-hold="1" title="Climb (Space)"><span>⤒</span></button>
@@ -697,6 +752,7 @@ export class SystemScene {
     $('#orders-card', this.ui).onclick = () => { audio.ui(); showMissionLog(this.game); };
     $('#land-btn', this.ui).onclick = () => this._landAtNearest();
     $('#auto-btn', this.ui).onclick = () => this._toggleAutopilot();
+    this._bindThrottleStrip($('#throttle-ui', this.ui));
     $('#below-btn', this.ui).onclick = () => this._toggleInterior(true);
     $('#ih-back', this.ui).onclick = () => this._toggleInterior(false);
     $('#warp-btn', this.ui).onclick = () => {
@@ -790,7 +846,8 @@ export class SystemScene {
     input.update(dt);
     if (this.dead) return;
     const stats = this.stats;
-    const turn = stats.turn * 1.35;          // gentler, more responsive helm
+    // gentler, more responsive helm — slower while the saucer is out of line
+    const turn = stats.turn * 1.35 * damageEffects(this.game.damage).turn;
 
     // --- steering assist: if a target is locked and roughly ahead, drift toward it
     let assistX = 0, assistY = 0;
@@ -1705,6 +1762,116 @@ export class SystemScene {
     if (this._dmgPanelT > 0.3) { this._dmgPanelT = 0; this._refreshDamagePanel(); }
   }
 
+  /* ------------------------------------------------------------ visible damage */
+  /** Where each system lives on the hull, in hull-local units (nose = +Z). */
+  _damageAnchor(sys) {
+    const L = this.player.userData.length || 6;
+    const sp = this.hullModel?.userData.saucerPart;
+    const saucer = sp ? sp.position : V(0, L * 0.12, L * 0.18);
+    switch (sys) {
+      case 'weapons': return V(saucer.x, saucer.y + 0.15, saucer.z + L * 0.12);
+      case 'shields': return V(0, 0.1, 0);
+      case 'engines': return (this.player.userData.thrusters?.[0]?.pos?.clone()) || V(0, 0.4, -L * 0.3);
+      case 'sensors': return V(0, -0.1, L * 0.3);
+      case 'warp': return V((Math.random() < 0.5 ? -1 : 1) * L * 0.2, L * 0.15, -L * 0.25);
+      case 'structure': return V(saucer.x, saucer.y - 0.25, saucer.z - L * 0.15);
+      default: return V();
+    }
+  }
+
+  _initDamageFx() {
+    const make = (n, size, color, additive) => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3).fill(-1e6), 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+        size, map: glowTexture(color), color: new THREE.Color(color), transparent: true, depthWrite: false,
+        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, opacity: additive ? 1 : 0.55, toneMapped: !additive,
+      }));
+      pts.frustumCulled = false;
+      this.fxRoot.add(pts);
+      return { pts, n, i: 0, vel: new Float32Array(n * 3), life: new Float32Array(n) };
+    };
+    this._smoke = make(160, 2.2, '#8a8f98', false);
+    this._sparks = make(160, 0.55, '#ffb35a', true);
+  }
+
+  _emit(pool, pos, vel, life) {
+    const k = pool.i = (pool.i + 1) % pool.n;
+    const a = pool.pts.geometry.attributes.position.array;
+    a[k * 3] = pos.x; a[k * 3 + 1] = pos.y; a[k * 3 + 2] = pos.z;
+    pool.vel[k * 3] = vel.x; pool.vel[k * 3 + 1] = vel.y; pool.vel[k * 3 + 2] = vel.z;
+    pool.life[k] = life;
+  }
+
+  _stepPool(pool, dt, drag) {
+    const a = pool.pts.geometry.attributes.position.array;
+    for (let k = 0; k < pool.n; k++) {
+      if (pool.life[k] <= 0) continue;
+      pool.life[k] -= dt;
+      if (pool.life[k] <= 0) { a[k * 3 + 1] = -1e6; continue; }
+      const f = Math.exp(-drag * dt);
+      pool.vel[k * 3] *= f; pool.vel[k * 3 + 1] *= f; pool.vel[k * 3 + 2] *= f;
+      a[k * 3] += pool.vel[k * 3] * dt; a[k * 3 + 1] += pool.vel[k * 3 + 1] * dt; a[k * 3 + 2] += pool.vel[k * 3 + 2] * dt;
+    }
+    pool.pts.geometry.attributes.position.needsUpdate = true;
+  }
+
+  /**
+   * Show the damage: smoke and sparks venting where systems are hit, a saucer
+   * knocked out of line, flickering nacelles, sputtering engines, a dim deflector.
+   */
+  _updateDamageVisuals(dt) {
+    const hull = this.hullModel;
+    if (!hull) return;
+    if (!this._smoke) this._initDamageFx();
+    const d = this.game.damage;
+    const t = this.time;
+    hull.updateMatrixWorld(true);
+    for (const sys of SYSTEM_IDS) {
+      const hurt = 1 - (d[sys] ?? 1);
+      if (hurt < 0.02) continue;
+      // venting: more and thicker the worse it is; left behind as the ship flies on
+      if (Math.random() < hurt * 26 * dt) {
+        const p = this._damageAnchor(sys).applyMatrix4(hull.matrixWorld);
+        const out = V((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2);
+        this._emit(this._smoke, p, out.clone().multiplyScalar(1.2), 1.6 + hurt * 1.4);
+        if (Math.random() < 0.6) this._emit(this._sparks, p, out.multiplyScalar(6), 0.35 + Math.random() * 0.3);
+      }
+    }
+    this._stepPool(this._smoke, dt, 0.6);
+    this._stepPool(this._sparks, dt, 1.5);
+
+    // the saucer: out of line and shuddering while Structural Integrity is down
+    const sp = hull.userData.saucerPart;
+    const rest = sp?.userData.rest;
+    if (sp && rest) {
+      const amt = 1 - (d.structure ?? 1);
+      sp.rotation.set(
+        rest.rot.x + (Math.sin(t * 6.3) * 0.05 + 0.07) * amt,
+        rest.rot.y + Math.sin(t * 4.1) * 0.03 * amt,
+        rest.rot.z + (Math.sin(t * 7.7) * 0.07 + 0.12) * amt,
+      );
+      sp.position.set(rest.pos.x + 0.08 * amt, rest.pos.y + (Math.sin(t * 9) * 0.04 - 0.06) * amt, rest.pos.z);
+    }
+
+    // nacelles flicker with a damaged warp core; engines sputter; deflector dims
+    const mats = hull.userData.materials;
+    if (mats?.glow) {
+      this._glowBase ||= mats.glow.color.clone();
+      const w = d.warp ?? 1;
+      const f = w >= 0.999 ? 1 : (w < BROKEN ? (Math.random() < 0.25 ? 0.12 : 0.5) : 0.75 + Math.sin(t * 23) * 0.2);
+      mats.glow.color.copy(this._glowBase).multiplyScalar(f);
+    }
+    if (mats?.deflector) {
+      this._deflBase ??= mats.deflector.emissiveIntensity;
+      mats.deflector.emissiveIntensity = this._deflBase * (0.2 + 0.8 * (d.sensors ?? 1));
+    }
+    const eng = d.engines ?? 1;
+    if (eng < 0.999 && this.engineSprites) {
+      for (const s of this.engineSprites) if (Math.random() < (1 - eng) * 0.5) s.material.opacity *= 0.2;
+    }
+  }
+
   _refreshDamagePanel(force = false) {
     const box = this.ui && $('#damage-panel', this.ui);
     if (!box) return;
@@ -2376,8 +2543,18 @@ export class SystemScene {
       const key = (this.game.shipClass.ability.name || 'Ability').split(' ')[0].toUpperCase();
       if (lbl) lbl.textContent = ready ? key : `${Math.ceil(this.abilityCd)}s`;
     }
+    const set = Math.round((this.boosting ? 1 : this.throttle) * 100);
     const tf = $('#throttle-fill', this.ui);
-    if (tf) tf.style.height = `${Math.round((this.boosting ? 1 : this.throttle) * 100)}%`;
+    if (tf) tf.style.height = `${set}%`;
+    const knob = $('#ts-knob', this.ui);
+    if (knob) knob.style.bottom = `${set}%`;
+    // where the ship really is: momentum takes a moment to catch up with the lever
+    const top = Math.max(1, this.stats.speed * (this.boosting ? 2 : 1));
+    const actual = $('#throttle-actual', this.ui);
+    if (actual) actual.style.bottom = `${Math.min(100, Math.round((this.speed / top) * 100))}%`;
+    const tsSet = $('#ts-set', this.ui); if (tsSet) tsSet.textContent = `${set}%`;
+    const tsSpd = $('#ts-speed', this.ui); if (tsSpd) tsSpd.textContent = `${Math.round(this.speed)} u/s`;
+    const strip = $('#throttle-ui', this.ui); if (strip) strip.setAttribute('aria-valuenow', String(set));
     const tr = $('#thr-read', this.ui);
     if (tr) tr.textContent = `${Math.round((this.boosting ? 1 : this.throttle) * 100)}%`;
     if (force) this._refreshMissionLine();
@@ -2450,6 +2627,7 @@ export class SystemScene {
       this._updateSaucerSection(capped);
       this._updateLoot(capped);
       this._tickRepairs(capped);
+      this._updateDamageVisuals(capped);
       if (this.combo?.timer > 0) {
         this.combo.timer -= capped;
         if (this.combo.timer <= 0) this._showCombo();
