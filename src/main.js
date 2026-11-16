@@ -4,7 +4,8 @@ import { Viewport } from './core/viewport.js';
 import { Input } from './core/input.js';
 import { audio } from './core/audio.js';
 import { getEnvironment } from './art/environment.js';
-import { game, Game } from './game.js';
+import { game, Game, SAVE_KEY } from './game.js';
+import { reconcile, askPersistent } from './core/savedb.js';
 import { TitleScene } from './scenes/title.js';
 import { EarthScene } from './scenes/earth.js';
 import { HangarScene } from './scenes/hangar.js';
@@ -275,14 +276,20 @@ class App {
     this._syncViewControls();
   }
 
-  /** Replace the running game with a save from elsewhere (the cloud) and restart cleanly. */
-  loadSaveData(data) {
+  /** Replace the running game with another save (cloud, backup or file) and restart cleanly. */
+  async loadSaveData(data, msg = 'Save loaded') {
     if (!data || typeof data !== 'object' || data.credits == null) { toast('That save could not be read', 'bad'); return; }
+    // stamp it as the newest save, so start-up picks it over everything else
+    const fresh = { ...data, lastSave: Date.now() };
+    game.saveLocked = true;
+    clearTimeout(game._idbTimer);
     try {
-      game.saveLocked = true;
-      localStorage.setItem('startrek.ascension.save.v1', JSON.stringify(data));
-    } catch (e) { toast('Could not write the save', 'bad'); return; }
-    toast('Cloud save loaded — restarting the bridge…', 'good', 2000);
+      localStorage.setItem(SAVE_KEY, JSON.stringify(fresh));
+    } catch (e) { /* IndexedDB below still has it */ }
+    const { writeSave } = await import('./core/savedb.js');
+    const ok = await writeSave(fresh, { forceBackup: false });
+    if (!ok && !storage.get(SAVE_KEY)) { game.saveLocked = false; toast('Could not write the save', 'bad'); return; }
+    toast(`${msg} — restarting the bridge…`, 'good', 2000);
     setTimeout(() => window.location.reload(), 900);
   }
 
@@ -432,7 +439,12 @@ class App {
 }
 
 /* ------------------------------------------------------------------ boot */
-function boot() {
+async function boot() {
+  // bring the IndexedDB save in before anything reads the save (never wait long)
+  try {
+    await Promise.race([reconcile(storage, SAVE_KEY), new Promise((r) => setTimeout(r, 1500))]);
+  } catch (e) { console.warn('[save] could not read IndexedDB', e); }
+  askPersistent();
   const canvas = document.getElementById('viewport');
   try {
     const test = document.createElement('canvas');
