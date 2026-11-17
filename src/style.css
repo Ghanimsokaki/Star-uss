@@ -524,7 +524,7 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; bord
     top: calc(64px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); width: auto; max-height: 30vh;
   }
   .earth-ui .side-left { max-height: 40vh; }
-  .globe-tools { bottom: calc(52vh); right: calc(10px + var(--safe-r)); }
+  .globe-tools { bottom: calc(12px + var(--safe-b)); right: calc(10px + var(--safe-r)); }
   .hud-top { top: calc(62px + var(--safe-t)); width: 190px; }
   .enemy-vitals { top: calc(62px + var(--safe-t)); width: 176px; }
   .vitals { padding: 8px 9px; }
@@ -681,7 +681,7 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; bord
 .is-mobile.portrait .act-btn.fire { width: 66px; height: 66px; }
 
 /* Phones on their side: everything has to be short, so trim the furniture. */
-.is-mobile:not(.portrait) .hud-top { width: 150px; top: calc(46px + var(--safe-t)); }
+.is-mobile:not(.portrait) .hud-top { width: 150px; top: calc(62px + var(--safe-t)); }
 .is-mobile:not(.portrait) .vitals:nth-child(n+3) { display: none; }
 .is-mobile:not(.portrait) .syslog { width: 32vw; }
 .is-mobile:not(.portrait) .act-btn { width: 50px; height: 50px; }
@@ -1011,7 +1011,7 @@ body[data-scene="system"] .fps-meter { bottom: auto; top: calc(112px + var(--saf
 }
 .is-mobile.portrait .hud-actions .act-btn { width: 54px; height: 54px; }
 .is-mobile.portrait .hud-actions .act-btn.fire { grid-column: 5; grid-row: 1 / span 2; align-self: center; width: 60px; height: 60px; }
-.is-mobile.portrait .view-controls { top: calc(136px + var(--safe-t)); left: auto; right: calc(10px + var(--safe-r)); transform: none; flex-direction: column; align-items: flex-end; }
+.is-mobile.portrait .view-controls { top: calc(124px + var(--safe-t)); left: auto; right: calc(10px + var(--safe-r)); transform: none; flex-direction: row; align-items: center; }
 .is-mobile.portrait .throttle-pad { top: 54%; }
 /* portrait: the left half of the screen is already the steering surface, so the
    joystick graphic would only collide with the button block */
@@ -1025,7 +1025,7 @@ body[data-scene="system"] .fps-meter { bottom: auto; top: calc(112px + var(--saf
   .tb-stats { gap: 2px; min-width: 0; }
   .stat .v { font-size: 11px; white-space: nowrap; }
 }
-.is-mobile.portrait .touch-hint { bottom: auto; top: calc(210px + var(--safe-t)); }
+.is-mobile.portrait .touch-hint { bottom: auto; top: calc(290px + var(--safe-t)); max-width: 86vw; white-space: normal; text-align: center; }
 
 /* ---------- Earth: advanced globe tools ---------- */
 .earth-ui .globe-tools { flex-wrap: wrap; justify-content: flex-end; max-width: min(92vw, 420px); }
@@ -1333,3 +1333,34 @@ body.below-decks .view-controls { display: none; }
 .convoy-chip i { width: 70px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .15); overflow: hidden; }
 .convoy-chip em { display: block; height: 100%; background: linear-gradient(90deg, #ff6a3d, #ffd36b); }
 @keyframes convoy-pulse { 50% { box-shadow: 0 0 18px rgba(255, 140, 60, .45); } }
+
+/* ---------- layout fixes: phones ---------- */
+/* the money boxes may not shrink below their numbers (they used to print on top of each other) */
+.stat { flex: 0 0 auto; }
+@media (max-width: 480px) {
+  .navbtn { padding: 0 7px; }
+  .stat i { font-size: 9px; width: 10px; }
+}
+/* sideways phone: the controls hint sits above the touch pads, not on them */
+.is-mobile:not(.portrait) .touch-hint { bottom: calc(118px + var(--safe-b)); }
+/* upright phone: nav buttons slim enough that your credits fit in the top bar */
+@media (max-width: 480px) {
+  /* buttons stay 44px for fingers; the gaps between them shrink instead */
+  .navbtn { padding: 0; justify-content: center; }
+  .tb-nav { gap: 2px; }
+  .topbar { padding: 0 4px 0 6px; gap: 2px; }
+}
+/* upright phone: speed strip below the CAM / HIDE UI row, the hint below the strip */
+.is-mobile.portrait .touch-mode .throttle-ui, .is-mobile.portrait.touch-mode .throttle-ui { top: calc(176px + var(--safe-t)); height: 150px; }
+.is-mobile.portrait .touch-hint { top: calc(340px + var(--safe-t)); }
+/* sideways phone, away from the flight screen: CAM / HIDE UI move to the right so
+   they don't sit on the row of panel buttons */
+@media (max-height: 520px) and (orientation: landscape) {
+  body:not([data-scene="system"]) .view-controls { left: auto; right: calc(10px + var(--safe-r)); transform: none; top: calc(62px + var(--safe-t)); }
+  body[data-scene="planet"] .planet-banner { top: calc(112px + var(--safe-t)); }
+}
+@media (max-width: 480px) { .stat.dil { display: none; } }   /* no room: credits only, no half-clipped icon */
+/* short laptop screens: the mouse speed strip is shorter so it stays below the mission card */
+@media (max-height: 780px) and (min-width: 861px) {
+  .throttle-ui { height: 132px; bottom: calc(138px + var(--safe-b)); }
+}
