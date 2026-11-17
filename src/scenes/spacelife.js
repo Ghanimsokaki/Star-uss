@@ -238,7 +238,8 @@ export class SpaceLife {
   _updateStationButton() {
     if (!this.stationBtn) return;
     const lbl = this.stationBtn.querySelector('[data-lbl]');
-    if (lbl) lbl.textContent = this.hasStation() ? 'Your station' : `Build a station · ${fmtC(STATION_COST)}`;
+    if (lbl) lbl.textContent = this.hasStation() ? 'Your station' : 'Build station';
+    this.stationBtn.title = this.hasStation() ? 'Add modules to your station here (Y)' : `Build your own space station here for ${fmtC(STATION_COST)} (Y)`;
   }
 
   /* ---------------------------------------------------------------- builder */

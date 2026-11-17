@@ -1343,3 +1343,24 @@ body.below-decks .view-controls { display: none; }
 }
 /* sideways phone: the controls hint sits above the touch pads, not on them */
 .is-mobile:not(.portrait) .touch-hint { bottom: calc(118px + var(--safe-b)); }
+/* upright phone: nav buttons slim enough that your credits fit in the top bar */
+@media (max-width: 480px) {
+  /* buttons stay 44px for fingers; the gaps between them shrink instead */
+  .navbtn { padding: 0; justify-content: center; }
+  .tb-nav { gap: 2px; }
+  .topbar { padding: 0 4px 0 6px; gap: 2px; }
+}
+/* upright phone: speed strip below the CAM / HIDE UI row, the hint below the strip */
+.is-mobile.portrait .touch-mode .throttle-ui, .is-mobile.portrait.touch-mode .throttle-ui { top: calc(176px + var(--safe-t)); height: 150px; }
+.is-mobile.portrait .touch-hint { top: calc(340px + var(--safe-t)); }
+/* sideways phone, away from the flight screen: CAM / HIDE UI move to the right so
+   they don't sit on the row of panel buttons */
+@media (max-height: 520px) and (orientation: landscape) {
+  body:not([data-scene="system"]) .view-controls { left: auto; right: calc(10px + var(--safe-r)); transform: none; top: calc(62px + var(--safe-t)); }
+  body[data-scene="planet"] .planet-banner { top: calc(112px + var(--safe-t)); }
+}
+@media (max-width: 480px) { .stat.dil { display: none; } }   /* no room: credits only, no half-clipped icon */
+/* short laptop screens: the mouse speed strip is shorter so it stays below the mission card */
+@media (max-height: 780px) and (min-width: 861px) {
+  .throttle-ui { height: 132px; bottom: calc(138px + var(--safe-b)); }
+}
